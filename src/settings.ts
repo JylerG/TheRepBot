@@ -1,11 +1,23 @@
-import { JSONObject, ScheduledJobEvent, SettingsFormField, SettingsFormFieldValidatorEvent, TriggerContext } from "@devvit/public-api";
+import {
+    JSONObject,
+    ScheduledJobEvent,
+    SettingsFormField,
+    SettingsFormFieldValidatorEvent,
+    TriggerContext,
+} from "@devvit/public-api";
 import { VALIDATE_REGEX_JOB } from "./constants.js";
 import pluralize from "pluralize";
 
+export enum ExistingFlairOverwriteHandling {
+    OverwriteNumeric = "overwritenumeric",
+    OverwriteAll = "overwriteall",
+    NeverSet = "neverset",
+}
+
 export enum AppSetting {
-    ThanksCommand = "thanksCommand",
+    ThanksCommand = "successMessage",
     ThanksCommandUsesRegex = "thanksCommandUsesRegex",
-    ModThanksCommand = "modThanksCommand",
+    ModThanksCommand = "approveCommand",
     AnyoneCanAwardPoints = "anyoneCanAwardPoints",
     SuperUsers = "superUsers",
     AutoSuperuserThreshold = "autoSuperuserThreshold",
@@ -35,147 +47,76 @@ export enum AppSetting {
     EnableBackup = "enableBackup",
     EnableRestore = "enableRestore",
     PrioritiseScoreFromFlair = "prioritiseScoreFromFlair",
-}
-
-export enum ExistingFlairOverwriteHandling {
-    OverwriteNumeric = "overwritenumeric",
-    OverwriteAll = "overwriteall",
-    NeverSet = "neverset",
-}
-
-export enum ReplyOptions {
-    NoReply = "none",
-    ReplyByPM = "replybypm",
-    ReplyAsComment = "replybycomment",
-}
-
-const replyOptionChoices = [
-    { label: "No Notification", value: ReplyOptions.NoReply },
-    { label: "Send user a private message", value: ReplyOptions.ReplyByPM },
-    { label: "Reply as comment", value: ReplyOptions.ReplyAsComment },
-];
-
-export enum LeaderboardMode {
-    Off = "off",
-    ModOnly = "modonly",
-    Public = "public",
-}
-
-export enum TemplateDefaults {
-    NotifyOnErrorTemplate = "Hello {{authorname}},\n\nYou cannot award a point to yourself.\n\nPlease contact the mods if you have any questions.\n\n---\n\n^(I am a bot)",
-    NotifyOnSuccessTemplate = "You have awarded 1 point to {{awardeeusername}}.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
-    NotifyAwardedUserTemplate = "Hello {{awardeeusername}},\n\nYou have been awarded a point for your contribution! New score: {{score}}\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
-    NotifyOnSuperuserTemplate = "Hello {{authorname}},\n\nNow that you have reached {{threshold}} points you can now award points yourself, even if you're not the OP. Please use the command \"{{pointscommand}}\" if you'd like to do this.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
-}
-
-function isFlairTemplateValid (event: SettingsFormFieldValidatorEvent<string>) {
-    const flairTemplateRegex = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){4}[0-9a-f]{8}$/;
-    if (event.value && !flairTemplateRegex.test(event.value)) {
-        return "Invalid flair template ID";
-    }
-}
-
-function selectFieldHasOptionChosen (event: SettingsFormFieldValidatorEvent<string[]>) {
-    if (!event.value || event.value.length !== 1) {
-        return "You must choose an option";
-    }
+    POINTTRIGGERWORDS = "pointTriggerWords",
+    SUCCESSMESSAGE = "successMessage",
+    SELFAWARDMESSAGE = "selfAwardMessage",
+    DUPLICATEAWARDMESSAGE = "duplicateAwardMessage",
+    BOTAWARDMESSAGE = "botAwardMessage",
+    POINTNAME = "pointName",
+    DISALLOWEDFLAIRS = "disallowedFlairs",
+    DISALLOWEDFLAIRMESSAGE = "disallowedFlairMessage",
+    APPROVECOMMAND = "approveCommand",
+    APPROVEMESSAGE = "approveMessage",
+    DENYCOMMAND = "denyCommand",
+    DENYMESSAGE = "denyMessage",
+    POINTSYMBOL = "pointSymbol",
+    ACCESSCONTROL = "accessControl",
+    MODONLYDISALLOWEDMESSAGE = "modOnlyDisallowedMessage",
+    APPROVEDONLYDISALLOWEDMESSAGE = "approvedOnlyDisallowedMessage",
+    ALLOWUNFLAIREDPOSTS = "allowUnflairedPosts",
+    UNFLAIREDPOSTMESSAGE = "unflairedPostMessage",
 }
 
 export const appSettings: SettingsFormField[] = [
+    // === POINT SYSTEM ===
     {
         type: "group",
-        label: "Reputation Points Settings",
+        label: "Point System Settings",
         fields: [
             {
-                name: AppSetting.ThanksCommand,
-                type: "paragraph",
-                label: "Command or commands for users to award reputation points",
-                helpText: "If you want to allow more than one command, place each command on a new line",
-                defaultValue: "!thanks",
-                onValidate: ({ value }) => {
-                    if (!value) {
-                        return "You must specify a command";
-                    }
-                },
-            },
-            {
-                name: AppSetting.ThanksCommandUsesRegex,
-                type: "boolean",
-                label: "Treat user commands as regular expressions",
-                defaultValue: false,
-                onValidate: validateRegexes,
-            },
-            {
-                name: AppSetting.ModThanksCommand,
                 type: "string",
-                label: "Alternate command for mods and trusted users to award reputation points",
-                helpText: "Optional.",
-                defaultValue: "!modthanks",
+                name: AppSetting.POINTTRIGGERWORDS,
+                label: "Trigger Words",
+                helpText:
+                    "Comma-separated list of trigger words users can type to award points (e.g., !award, .point).",
+                defaultValue: "!award",
             },
             {
-                name: AppSetting.AnyoneCanAwardPoints,
-                type: "boolean",
-                label: "Allow any user to award points",
-                helpText: "If turned off, only the OP, mods and named trusted users may award points",
-                defaultValue: false,
-            },
-            {
-                name: AppSetting.SuperUsers,
                 type: "string",
-                label: "A list of trusted users other than mods who can award points",
-                helpText: "Optional. Enter a comma-separated list of users who can award points in addition to mods using the mod command",
+                name: AppSetting.APPROVECOMMAND,
+                label: "Moderator Award Command",
+                helpText:
+                    "Command moderators use to override and award points.",
+                defaultValue: "!modaward",
             },
             {
-                name: AppSetting.AutoSuperuserThreshold,
-                type: "number",
-                label: "Treat users with this many points as automatically a trusted user",
-                helpText: "If zero, only explicitly named users above will be treated as trusted users",
-            },
-            {
-                name: AppSetting.NotifyOnAutoSuperuser,
-                type: "select",
-                label: "Notify users who reach the auto trusted user threshold",
-                options: replyOptionChoices,
-                multiSelect: false,
-                defaultValue: [ReplyOptions.NoReply],
-                onValidate: selectFieldHasOptionChosen,
-            },
-            {
-                name: AppSetting.NotifyOnAutoSuperuserTemplate,
-                type: "paragraph",
-                label: "Template of message sent when a user reaches the trusted user threshold",
-                helpText: "Placeholder supported: {{authorname}}, {{permalink}}, {{threshold}}, {{pointscommand}}",
-                defaultValue: TemplateDefaults.NotifyOnSuperuserTemplate,
-            },
-            {
-                name: AppSetting.UsersWhoCannotBeAwardedPoints,
                 type: "string",
-                label: "Users who shouldn't have points awarded to them",
-                helpText: "Optional. Enter a comma-separated list of users who shouldn't have points awarded to them.",
+                name: AppSetting.DENYCOMMAND,
+                label: "Moderator Deny Command",
+                helpText: "Command to revoke a previously awarded point.",
+                defaultValue: "!remove",
             },
             {
-                name: AppSetting.UsersWhoCannotAwardPoints,
                 type: "string",
-                label: "Users who are not permitted to award points",
-                helpText: "Optional. Enter a comma-separated list of users who are not able to award points",
+                name: AppSetting.POINTNAME,
+                label: "Point Name",
+                helpText:
+                    "The name shown in award messages, like 'point', 'kudo', etc.",
+                defaultValue: "point",
             },
             {
-                name: AppSetting.PostFlairTextToIgnore,
                 type: "string",
-                label: "Optional. A list of post flairs (comma separated) for posts where points cannot be awarded",
-            },
-            {
-                name: AppSetting.PrioritiseScoreFromFlair,
-                type: "boolean",
-                label: "Use score from flair in precedence over score from database",
-                helpText: "This may be useful if you want to be able to manually set a score via a flair.",
-                defaultValue: false,
+                name: AppSetting.POINTSYMBOL,
+                label: "Point Symbol",
+                helpText:
+                    "Optional emoji or character to show alongside point totals.",
+                defaultValue: "⭐",
             },
         ],
     },
     {
         type: "group",
-        label: "Points Setting Options",
+        label: "Flair Setting Options",
         fields: [
             {
                 name: AppSetting.ExistingFlairHandling,
@@ -202,54 +143,6 @@ export const appSettings: SettingsFormField[] = [
                 label: "Flair template ID to use for points flairs",
                 helpText: "Optional. Please choose either a CSS class or flair template, not both.",
                 onValidate: isFlairTemplateValid,
-            },
-            {
-                name: AppSetting.NotifyOnError,
-                type: "select",
-                label: "Notify users by replying to their command if they try to award a point to themselves accidentally",
-                options: replyOptionChoices,
-                multiSelect: false,
-                defaultValue: [ReplyOptions.NoReply],
-                onValidate: selectFieldHasOptionChosen,
-            },
-            {
-                name: AppSetting.NotifyOnErrorTemplate,
-                type: "paragraph",
-                label: "Template of message sent when a user tries to award themselves a point",
-                helpText: "Placeholder supported: {{authorname}}, {{permalink}}",
-                defaultValue: TemplateDefaults.NotifyOnErrorTemplate,
-            },
-            {
-                name: AppSetting.NotifyOnSuccess,
-                type: "select",
-                label: "Notify users by replying to their command if their points command works",
-                options: replyOptionChoices,
-                multiSelect: false,
-                defaultValue: [ReplyOptions.NoReply],
-                onValidate: selectFieldHasOptionChosen,
-            },
-            {
-                name: AppSetting.NotifyOnSuccessTemplate,
-                type: "paragraph",
-                label: "Template of message sent when a user successfully awards a point",
-                helpText: "Placeholders supported: {{authorname}}, {{awardeeusername}}, {{permalink}}, {{score}}",
-                defaultValue: TemplateDefaults.NotifyOnSuccessTemplate,
-            },
-            {
-                name: AppSetting.NotifyAwardedUser,
-                type: "select",
-                label: "Notify users who have had a point awarded",
-                options: replyOptionChoices,
-                multiSelect: false,
-                defaultValue: [ReplyOptions.NoReply],
-                onValidate: selectFieldHasOptionChosen,
-            },
-            {
-                name: AppSetting.NotifyAwardedUserTemplate,
-                type: "paragraph",
-                label: "Template of message sent when a user successfully awards a point",
-                helpText: "Placeholders supported: {{authorname}}, {{awardeeusername}}, {{permalink}}, {{score}}",
-                defaultValue: TemplateDefaults.NotifyAwardedUserTemplate,
             },
         ],
     },
@@ -286,41 +179,131 @@ export const appSettings: SettingsFormField[] = [
     },
     {
         type: "group",
-        label: "Leaderboard Settings",
+        label: "Messages",
         fields: [
             {
-                name: AppSetting.LeaderboardMode,
-                type: "select",
-                options: [
-                    { label: "Off", value: LeaderboardMode.Off },
-                    { label: "Mod Only", value: LeaderboardMode.ModOnly },
-                    { label: "Default settings for wiki", value: LeaderboardMode.Public },
-                ],
-                label: "Wiki Leaderboard Mode",
-                multiSelect: false,
-                defaultValue: [LeaderboardMode.Off],
-                onValidate: selectFieldHasOptionChosen,
+                type: "string",
+                name: AppSetting.SUCCESSMESSAGE,
+                label: "Success Message",
+                helpText:
+                    "Message when a point is awarded. You can use {awardee} to get the person being awarded's username, {awarder} to get the person awarding's username, {symbol} to get the symbol (if one is specified), {total} to get the awardee's total score, {name} to get the name of the point, {scoreboard} to link to the scoreboard wiki page.",
+                defaultValue:
+                    "+1 {name} awarded to u/{awardee} by u/{awarder}. Total: {total}{symbol}. Scoreboard is located [here]({scoreboard})",
             },
             {
-                name: AppSetting.LeaderboardWikiPage,
                 type: "string",
-                label: "Leaderboard Wiki Page",
-                defaultValue: "reputatorbotleaderboard",
-                onValidate: ({ value }) => {
-                    const wikiPageNameRegex = /^[\w/]+$/i;
-                    if (value && !wikiPageNameRegex.test(value)) {
-                        return "Invalid wiki page name. Wiki page name must consist of alphanumeric characters and / characters only.";
-                    }
-                },
+                name: AppSetting.SELFAWARDMESSAGE,
+                label: "Self Award Message",
+                helpText:
+                    "Shown when someone tries to award themselves. You can use {name}.",
+                defaultValue: "You can't award yourself a {name}.",
             },
+            {
+                type: "string",
+                name: AppSetting.DUPLICATEAWARDMESSAGE,
+                label: "Duplicate Award Message",
+                helpText:
+                    "Shown when someone tries to award a post they've already awarded. You can use {awardee}, {total}, {name}.",
+                defaultValue:
+                    "This user has already been awarded for this comment.",
+            },
+            {
+                type: "string",
+                name: AppSetting.BOTAWARDMESSAGE,
+                label: "Bot Award Message",
+                helpText:
+                    "Shown when someone tries to award the bot. You can use {name}.",
+                defaultValue: "You can't award the bot a {name}.",
+            },
+            {
+                type: "string",
+                name: AppSetting.APPROVEMESSAGE,
+                label: "Moderator Award Message",
+                helpText:
+                    "Shown when a mod awards a point. Use {awardee}, {total}, {symbol}, {name}.",
+                defaultValue:
+                    "Award approved! u/{awardee} now has {total}{symbol} {name}s.",
+            },
+            {
+                type: "string",
+                name: AppSetting.DENYMESSAGE,
+                label: "Moderator Deny Message",
+                helpText:
+                    "Message when a mod removes a point. You can use {name}.",
+                defaultValue: "{name} removed by a moderator.",
+            },
+            {
+                type: "string",
+                name: AppSetting.MODONLYDISALLOWEDMESSAGE,
+                label: "Non-Mod Access Denied",
+                helpText:
+                    "Message for users when only mods can award. You can use {name}.",
+                defaultValue: "Only moderators are allowed to award {name}s.",
+            },
+            {
+                type: "string",
+                name: AppSetting.APPROVEDONLYDISALLOWEDMESSAGE,
+                label: "Non-Approved Access Denied",
+                helpText:
+                    "Message when a non-approved user tries to award. You can use {name}.",
+                defaultValue:
+                    "Only moderators and approved users can award {name}s.",
+            },
+            {
+                type: "string",
+                name: AppSetting.DISALLOWEDFLAIRMESSAGE,
+                label: "Disallowed Flair Message",
+                helpText:
+                    "Message shown when awarding on disallowed flair. You can use {name}.",
+                defaultValue:
+                    "Points cannot be awarded on posts with this flair. Please choose another post.",
+            },
+            {
+                type: "string",
+                name: AppSetting.UNFLAIREDPOSTMESSAGE,
+                label: "Unflaired Post Message",
+                helpText: "Shown when trying to award on an unflaired post.",
+                defaultValue:
+                    "Points cannot be awarded on posts without flair. Please award only on flaired posts.",
+            },
+        ],
+    },
+    {
+        type: "select",
+        name: AppSetting.ACCESSCONTROL,
+        label: "Who Can Award?",
+        helpText: "Choose who is allowed to award points.",
+        options: [
+            { label: "Moderators Only", value: "moderators-only" },
+            {
+                label: "Mods and Approved Users",
+                value: "moderators-and-approved-users",
+            },
+            { label: "Everyone", value: "everyone" },
+        ],
+        defaultValue: ["moderators-only"],
+        onValidate: selectFieldHasOptionChosen,
+    },
+    {
+        type: "string",
+        name: AppSetting.DISALLOWEDFLAIRS,
+        label: "Disallowed Flairs",
+        helpText: "Comma-separated flair texts where points cannot be awarded.",
+        defaultValue: "",
+    },
+    {
+        type: "group",
+        label: "Misc Settings",
+        fields: [
             {
                 name: AppSetting.LeaderboardSize,
                 type: "number",
                 label: "Leaderboard Size",
-                defaultValue: 20,
+                helpText: "Number of users to show on the leaderboard (1-30).",
+                defaultValue: 10,
                 onValidate: ({ value }) => {
-                    if (value && (value < 10 || value > 100)) {
-                        return "Value should be between 10 and 100";
+                    if (value && (value < 1 || value > 30)) {
+                        return "Value should be between 1 and 30";
                     }
                 },
             },
@@ -328,7 +311,43 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.LeaderboardHelpPage,
                 type: "string",
                 label: "Leaderboard Help Page",
-                helpText: "Optional. A web page (e.g. on your wiki, or an announcement post) telling users how to use reputation points on your subreddit",
+                helpText: "Optional. A web page (e.g. on your wiki, or an announcement post) telling users how to use reputation points on your subreddit. Please use a full URL, e.g. https://www.reddit.com/r/subreddit/wiki/yourLeaderboard.",
+            },
+            {
+                type: "select",
+                name: AppSetting.ALLOWUNFLAIREDPOSTS,
+                label: "Allow on Unflaired Posts?",
+                helpText: "Allow awarding on posts without flair?",
+                options: [
+                    { label: "Yes", value: "yes" },
+                    { label: "No", value: "no" },
+                ],
+                defaultValue: ["no"],
+                onValidate: selectFieldHasOptionChosen,
+            },
+            {
+                type: "string",
+                name: "creditSystemWiki",
+                label: "Credit System Wiki",
+                helpText:
+                    "Wiki page name that explains how the point system works.",
+                defaultValue: "credit-system",
+            },
+            {
+                type: "string",
+                name: "creditLog",
+                label: "Award Log Wiki Page",
+                helpText: "Page where all awards are logged.",
+                defaultValue: "credit-log",
+            },
+            {
+                type: "boolean",
+                name: AppSetting.ThanksCommandUsesRegex,
+                label: "Use Regex for Trigger Commands?",
+                helpText:
+                    "If enabled, trigger commands are treated as regular expressions.",
+                defaultValue: false,
+                onValidate: validateRegexes,
             },
         ],
     },
@@ -353,7 +372,51 @@ export const appSettings: SettingsFormField[] = [
     },
 ];
 
-async function validateRegexes (event: SettingsFormFieldValidatorEvent<boolean>, context: TriggerContext) {
+
+export enum ReplyOptions {
+    NoReply = "none",
+    ReplyByPM = "replybypm",
+    ReplyAsComment = "replybycomment",
+}
+
+const replyOptionChoices = [
+    { label: "No Notification", value: ReplyOptions.NoReply },
+    { label: "Send user a private message", value: ReplyOptions.ReplyByPM },
+    { label: "Reply as comment", value: ReplyOptions.ReplyAsComment },
+];
+
+export enum LeaderboardMode {
+    Off = "off",
+    ModOnly = "modonly",
+    Public = "public",
+}
+
+export enum TemplateDefaults {
+    NotifyOnErrorTemplate = "Hello {{authorname}},\n\nYou cannot award a point to yourself.\n\nPlease contact the mods if you have any questions.\n\n---\n\n^(I am a bot)",
+    NotifyOnSuccessTemplate = "You have awarded 1 point to {{awardeeusername}}.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
+    NotifyAwardedUserTemplate = "Hello {{awardeeusername}},\n\nYou have been awarded a point for your contribution! New score: {{score}}\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
+    NotifyOnSuperuserTemplate = "Hello {{authorname}},\n\nNow that you have reached {{threshold}} points you can now award points yourself, even if you're not the OP. Please use the command \"{{pointscommand}}\" if you'd like to do this.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
+}
+
+function isFlairTemplateValid(event: SettingsFormFieldValidatorEvent<string>) {
+    const flairTemplateRegex = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){4}[0-9a-f]{8}$/;
+    if (event.value && !flairTemplateRegex.test(event.value)) {
+        return "Invalid flair template ID";
+    }
+}
+
+function selectFieldHasOptionChosen(
+    event: SettingsFormFieldValidatorEvent<string[]>
+) {
+    if (!event.value || event.value.length !== 1) {
+        return "You must choose an option";
+    }
+}
+
+async function validateRegexes(
+    event: SettingsFormFieldValidatorEvent<boolean>,
+    context: TriggerContext
+) {
     if (!event.value) {
         return;
     }
@@ -370,7 +433,10 @@ async function validateRegexes (event: SettingsFormFieldValidatorEvent<boolean>,
     });
 }
 
-export async function validateRegexJobHandler (event: ScheduledJobEvent<JSONObject | undefined>, context: TriggerContext) {
+export async function validateRegexJobHandler(
+    event: ScheduledJobEvent<JSONObject | undefined>,
+    context: TriggerContext
+) {
     const username = event.data?.username as string | undefined;
     if (!username) {
         return;
@@ -383,8 +449,13 @@ export async function validateRegexJobHandler (event: ScheduledJobEvent<JSONObje
 
     console.log("Running settings validator");
 
-    const userCommandVal = settings[AppSetting.ThanksCommand] as string | undefined;
-    const userCommandList = userCommandVal?.split("\n").map(command => command.toLowerCase().trim()) ?? [];
+    const userCommandVal = settings[AppSetting.ThanksCommand] as
+        | string
+        | undefined;
+    const userCommandList =
+        userCommandVal
+            ?.split("\n")
+            .map((command) => command.toLowerCase().trim()) ?? [];
     const invalidCommands: string[] = [];
 
     for (const command of userCommandList) {
@@ -399,11 +470,18 @@ export async function validateRegexJobHandler (event: ScheduledJobEvent<JSONObje
         return;
     }
 
-    let message = `The app settings are configured to treat user commands as regular expressions, but ${invalidCommands.length} ${pluralize("command", invalidCommands.length)} is not a valid regular expression:\n\n`;
+    let message = `The app settings are configured to treat user commands as regular expressions, but ${
+        invalidCommands.length
+    } ${pluralize(
+        "command",
+        invalidCommands.length
+    )} is not a valid regular expression:\n\n`;
 
-    message += invalidCommands.map(command => `* ${command}`).join("\n");
+    message += invalidCommands.map((command) => `* ${command}`).join("\n");
 
-    const subredditName = context.subredditName ?? (await context.reddit.getCurrentSubreddit()).name;
+    const subredditName =
+        context.subredditName ??
+        (await context.reddit.getCurrentSubreddit()).name;
 
     await context.reddit.sendPrivateMessage({
         subject: `ReputatorBot settings on /r/${subredditName} are invalid`,

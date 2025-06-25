@@ -1,4 +1,4 @@
-ReputatorBot is an app that allows users to award reputation points if a user has been helpful. Its main use case is for help and advice subreddits to help indicate users who have a track record of providing useful solutions.
+TheRepBot is an app that allows users to award reputation points if a user has been helpful. Its main use case is for help and advice subreddits to help indicate users who have a track record of providing useful solutions.
 
 It allows the OP of a post, a mod, or a trusted user to reply to a user and award them a point using a bot command, which will be stored as their user flair (optional from v1.2) and stored in a data store. The command can be customisable (by default it is `!thanks`).
 
@@ -35,62 +35,25 @@ Data for users is removed from the app within 48 hours from v1.3 onwards.
 
 ## Acknowledgements
 
-[Podium icons created by Freepik - Flaticon](https://www.flaticon.com/free-icons/podium)
+[Code edited from u/fsv's ReputatorBot](https://github.com/fsvreddit/reputatorbot).
 
 ## About
 
-This app is open source and licenced under the BSD 3-Clause Licence. You can find the source code on GitHub [here](https://github.com/fsvreddit/reputatorbot).
+This app is open source and licenced under the BSD 3-Clause Licence. You can find the source code on GitHub [here](https://github.com/JylerG/TheRepBot).
 
 ## Version History
 
-### v1.5.4
-
-* No user facing changes - Devvit update only.
-
-### v1.5.3
-
-* Ensure that "you have been awarded" messages go to the awardee, not the awarder
-
-### v1.5.2
-
-* Fixes a security vulnerability relating to menu items
-
-### v1.5.1
-
-* Flairs that start with a number but are not purely numeric are no longer treated as if they are the user's existing score
-* Add a feature to manually set a user's points (you can find it on a comment's context menu)
-
-### v1.5
-
-* Support for multiple user keywords
-* Support for regular expressions for user keywords
-* Add feature to optionally notify a user who has been awarded a point
-* Internal efficiency changes
-
-### v1.4.8
-
-* No user facing changes. Check frequency reduced to once per 28 days, Devvit version bump and internal code improvements
-
-### v1.4
-
-* Add custom post type to allow a leaderboard to be pinned to the top of your subreddit
-* Allow a configurable number of scores on the leaderboard
-* Backup and Restore functionality
-* Reduce data cleanup interval to 48 hours
-
-### v1.3
-
-* The leaderboard is now updated immediately after a point is awarded, if that point would affect the leaderboard standings
-* You can now exclude posts with certain flairs from allowing points to be awarded
-* If a user deletes their account, their data will be removed from the app within 24 hours
-
-### v1.2
-
-* You can now award points without setting user flair at all if you wish. Points are maintained in the background and the score is visible on the leaderboard (if turned on)
-* The message that can be configured when a point is successfully awarded has a new placeholder {{points}} indicating the new score
-
-### v1.1
-
-* You can now use the placeholder {{permalink}} in replies when you award a point or try and self-award
-* Super users must now use the mod command, not the command that the OP would use. This allows super users to remind people how to award points without accidentally awarding one themselves
-* You can now set a points threshold for users to be automatically considered "trusted"
+### v0.0.6
+* Kept bits of code from ReputatorBot while implementing custom code
+* Set up a baseline for what should be used
+* Note that this bot's source code has changed since this README/project was first created and is why these notes may seem weird with what the code shows
+### 0.0.5
+* Add more customizability to various messages
+* Allow awards to be allowed/not on unflaired posts as specified by app 
+* Add more options to customizability
+* Make it so that various placeholders work and the scoreboard appears as intended
+* NOTE: THE SCOREBOARD IS BUGGY AND STILL A WORK-IN-PROGRESS
+### 0.0.2
+* Improved text explanations for what various entries are for
+### 0.0.1
+* Getting base code out
