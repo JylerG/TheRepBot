@@ -1,0 +1,7 @@
+{
+  "plugins": ["sonarjs"],
+  "rules": {
+    "sonarjs/no-duplicate-string": "off",
+    "sonarjs/no-identical-functions": "off"
+  }
+}
