@@ -9,232 +9,149 @@ import { getSubredditName } from "./utility.js";
 import { LeaderboardMode, AppSetting } from "./settings.js";
 import markdownEscape from "markdown-escape";
 import pluralize from "pluralize";
-import { format, startOfTomorrow } from "date-fns";
+import { format } from "date-fns";
 import { logger } from "./logger.js";
 
 const TIMEFRAMES = ["daily", "weekly", "monthly", "yearly", "alltime"] as const;
 
 function leaderboardKey(timeframe: string): string {
-    return timeframe === "alltime"
-        ? "thanksPointsStore"
-        : `thanksPointsStore:${timeframe}`;
+    return timeframe === "alltime" ? "thanksPointsStore" : `thanksPointsStore:${timeframe}`;
 }
 
 function expirationFor(timeframe: string): Date | undefined {
     const now = new Date();
     const utcNow = new Date(
-        Date.UTC(
-            now.getUTCFullYear(),
-            now.getUTCMonth(),
-            now.getUTCDate(),
-            now.getUTCHours(),
-            now.getUTCMinutes(),
-            now.getUTCSeconds()
-        )
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), now.getUTCMinutes(), now.getUTCSeconds())
     );
 
     switch (timeframe) {
-        case "daily": {
-            const tomorrow = new Date(utcNow);
-            tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-            tomorrow.setUTCHours(0, 0, 0, 0);
-            return tomorrow;
-        }
+        case "daily": utcNow.setUTCDate(utcNow.getUTCDate() + 1); utcNow.setUTCHours(0, 0, 0, 0); return utcNow;
         case "weekly": {
-            const dayOfWeek = utcNow.getUTCDay(); // 0 (Sun) to 6 (Sat)
-            const daysUntilMonday = (8 - dayOfWeek) % 7 || 7;
-            const nextMonday = new Date(utcNow);
-            nextMonday.setUTCDate(nextMonday.getUTCDate() + daysUntilMonday);
-            nextMonday.setUTCHours(0, 0, 0, 0);
-            return nextMonday;
+            const daysUntilMonday = (8 - utcNow.getUTCDay()) % 7 || 7;
+            utcNow.setUTCDate(utcNow.getUTCDate() + daysUntilMonday);
+            utcNow.setUTCHours(0, 0, 0, 0);
+            return utcNow;
         }
-        case "monthly": {
-            const nextMonth = new Date(
-                Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth() + 1, 1)
-            );
-            return nextMonth;
-        }
-        case "yearly": {
-            const nextYear = new Date(
-                Date.UTC(utcNow.getUTCFullYear() + 1, 0, 1)
-            );
-            return nextYear;
-        }
-        case "alltime":
-          return undefined; // No expiration for all-time leaderboard
-        default:
-            throw new Error(`Invalid timeframe: ${timeframe}`);
+        case "monthly": return new Date(Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth() + 1, 1));
+        case "yearly": return new Date(Date.UTC(utcNow.getUTCFullYear() + 1, 0, 1));
+        case "alltime": return undefined;
+        default: throw new Error(`Invalid timeframe: ${timeframe}`);
     }
 }
 
-export async function updateLeaderboard(
-    event: ScheduledJobEvent<JSONObject | undefined>,
-    context: JobContext
-) {
-    logger.info("Leaderboard update job started.");
+export async function updateLeaderboard(event: ScheduledJobEvent<JSONObject | undefined>, context: JobContext) {
+    logger.info("\x1b[34m[Leaderboard] Update job started...\x1b[0m");
 
     const settings = await context.settings.getAll();
-    logger.debug("Leaderboard: Settings loaded", settings);
-
-    const leaderboardMode = settings[AppSetting.LeaderboardMode] as
-        | string[]
-        | undefined;
+    const leaderboardMode = settings[AppSetting.LeaderboardMode] as string[] | undefined;
     if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) {
-        logger.info("Leaderboard mode is OFF. Exiting.");
+        logger.info("\x1b[33m[Leaderboard] Mode is OFF. Exiting.\x1b[0m");
         return;
     }
 
-    const wikiPageName = settings[AppSetting.LeaderboardWikiPage] as
-        | string
-        | undefined;
+    const wikiPageName = settings[AppSetting.LeaderboardWikiPage] as string;
     if (!wikiPageName) {
-        logger.warn("No wiki page name configured. Exiting.");
+        logger.warn("\x1b[33m[Leaderboard] No wiki page name configured. Exiting.\x1b[0m");
         return;
     }
 
-    const leaderboardSize =
-        (settings[AppSetting.LeaderboardSize] as number) ?? 20;
+    const leaderboardSize = (settings[AppSetting.LeaderboardSize] as number) ?? 20;
     const pointName = (settings[AppSetting.PointName] as string) ?? "point";
     const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
-
     const subredditName = await getSubredditName(context);
     if (!subredditName) {
-        await logger.error("Could not determine subreddit name.");
+        logger.error("\x1b[31m[Leaderboard] Could not determine subreddit name.\x1b[0m");
         return;
     }
 
-    const now = new Date();
-    const formattedDate = format(now, "MM/dd/yyyy HH:mm:ss");
-    logger.debug("Updating leaderboard", { subredditName, formattedDate });
-
+    const formattedDate = format(new Date(), "MM/dd/yyyy HH:mm:ss");
     let markdown = `# Leaderboards for r/${subredditName}\n`;
 
-    const helpPage = settings[AppSetting.LeaderboardHelpPage] as
-        | string
-        | undefined;
-    const helpMessageTemplate = settings[
-        AppSetting.LeaderboardHelpPageMessage
-    ] as string | undefined;
-
+    const helpPage = settings[AppSetting.LeaderboardHelpPage] as string;
+    const helpMessageTemplate = settings[AppSetting.LeaderboardHelpPageMessage] as string;
     if (helpPage && helpMessageTemplate) {
-        const renderedHelp = helpMessageTemplate.replace("{help}", helpPage);
-        markdown += `${renderedHelp}\n`;
+        markdown += `${helpMessageTemplate.replace("{help}", helpPage)}\n`;
     }
+
+    const correctPermissionLevel = leaderboardMode[0] === LeaderboardMode.Public
+        ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS
+        : WikiPagePermissionLevel.MODS_ONLY;
 
     for (const timeframe of TIMEFRAMES) {
         const redisKey = leaderboardKey(timeframe);
-        const scores = await context.redis.zRange(
-            redisKey,
-            0,
-            leaderboardSize - 1
-        );
+        const scores = await context.redis.zRange(redisKey, 0, leaderboardSize - 1);
 
-        const title =
-            timeframe === "alltime" ? "All Time" : capitalize(timeframe);
-        logger.info(`Rendering ${title} leaderboard`, {
-            scoreCount: scores.length,
-        });
+        const title = timeframe === "alltime" ? "All Time" : capitalize(timeframe);
+        logger.info(`\x1b[34m[Leaderboard] Rendering ${title} leaderboard with ${scores.length} entries...\x1b[0m`);
 
-        markdown += `\n\n## ${title}\n`;
-        markdown += `| Rank | User | ${capitalize(pointName)}${pluralize(
-            "",
-            scores.length
-        )} |\n`;
-        markdown += `|------|------|---------|\n`;
+        markdown += `\n\n## ${title}\n| Rank | User | ${capitalize(pointName)}${pluralize("", scores.length)} |\n|------|------|---------|\n`;
 
         if (scores.length === 0) {
             markdown += `| – | No data yet | – |\n`;
-            logger.warn(`No scores found for ${title}. Added placeholder row.`);
+            logger.warn(`\x1b[33m[Leaderboard] No scores for ${title} — placeholder row added.\x1b[0m`);
         } else {
             for (let i = 0; i < scores.length; i++) {
                 const entry = scores[i];
                 const username = "member" in entry ? entry.member : entry[0];
                 const score = "score" in entry ? entry.score : entry[1];
                 const displayName = markdownEscape(username);
-                const userPageLink = `/r/${subredditName}/wiki/user/${encodeURIComponent(
-                    username
-                )}`;
-                markdown += `| ${
-                    i + 1
-                } | [${displayName}](${userPageLink}) | ${score}${pointSymbol} |\n`;
+                const userPage = `user/${encodeURIComponent(username)}`;
+                const userPageLink = `/r/${subredditName}/wiki/${userPage}`;
+                markdown += `| ${i + 1} | [${displayName}](${userPageLink}) | ${score}${pointSymbol} |\n`;
+
+                try {
+                    await context.reddit.getWikiPage(subredditName, userPage);
+                    logger.debug(`\x1b[90m[Leaderboard] Wiki exists: ${userPage}\x1b[0m`);
+                } catch {
+                    const content = `This is the wiki page for u/${username}'s reputation in r/${subredditName}.`;
+                    await context.reddit.createWikiPage({ subredditName, page: userPage, content, reason: "Created leaderboard user page" });
+                    await context.reddit.updateWikiPageSettings({ subredditName, page: userPage, listed: true, permLevel: correctPermissionLevel });
+                    logger.info(`\x1b[36m[Leaderboard] Created wiki page: ${username}\x1b[0m`);
+                }
             }
         }
 
         const expiry = expirationFor(timeframe);
         if (expiry) {
-            const ttlSeconds = Math.floor((expiry.getTime() - Date.now()) / 1000);
-            if (ttlSeconds > 0) {
-                await context.redis.expire(redisKey, ttlSeconds);
-                logger.debug(`Set Redis expiration for ${title} leaderboard`, {
-                    redisKey,
-                    ttlSeconds,
-                });
-            } else {
-                logger.warn(`Calculated TTL for ${title} leaderboard is not positive. Skipping expiration.`);
+            const ttl = Math.floor((expiry.getTime() - Date.now()) / 1000);
+            if (ttl > 0) {
+                await context.redis.expire(redisKey, ttl);
+                logger.debug(`\x1b[90m[Leaderboard] Redis expiration set for ${title} — ${ttl}s\x1b[0m`);
             }
         }
     }
 
     markdown += `\n\n_Last updated: ${formattedDate} UTC_`;
 
-    const wikiPageOptions = {
-        subredditName,
-        page: wikiPageName,
-        content: markdown,
-        reason:
-            typeof event.data?.reason === "string"
-                ? event.data.reason
-                : `Updated ${formattedDate}`,
-    };
-
-    let wikiPage: WikiPage | undefined;
     try {
-        wikiPage = await context.reddit.getWikiPage(
-            subredditName,
-            wikiPageName
-        );
-        logger.info("Fetched existing wiki page.");
-    } catch {
-        logger.warn("Wiki page does not exist. A new one will be created.");
-    }
-
-    if (wikiPage) {
+        const wikiPage = await context.reddit.getWikiPage(subredditName, wikiPageName);
         if (wikiPage.content !== markdown) {
-            await context.reddit.updateWikiPage(wikiPageOptions);
-            logger.info("Leaderboard wiki page content updated.");
-        } else {
-            logger.info("Leaderboard content unchanged. Skipping update.");
+            await context.reddit.updateWikiPage({ subredditName, page: wikiPageName, content: markdown, reason: `Updated ${formattedDate}` });
+            logger.info("\x1b[32m[Leaderboard] Wiki content updated.\x1b[0m");
         }
-    } else {
-        await context.reddit.createWikiPage(wikiPageOptions);
-        logger.info("Leaderboard wiki page created.");
-    }
 
-    const correctPermissionLevel =
-        leaderboardMode[0] === LeaderboardMode.Public
-            ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS
-            : WikiPagePermissionLevel.MODS_ONLY;
-
-    if (wikiPage) {
-        const wikiPageSettings = await wikiPage.getSettings();
-        if (wikiPageSettings.permLevel !== correctPermissionLevel) {
+        const wikiSettings = await wikiPage.getSettings();
+        if (wikiSettings.permLevel !== correctPermissionLevel) {
             await context.reddit.updateWikiPageSettings({
                 subredditName,
                 page: wikiPageName,
                 listed: true,
                 permLevel: correctPermissionLevel,
             });
-            logger.info("Leaderboard wiki page permissions updated.", {
-                level: correctPermissionLevel,
-            });
-        } else {
-            logger.debug(
-                "Wiki page permissions already correct. No change made."
-            );
+            logger.info("\x1b[32m[Leaderboard] Wiki permissions updated.\x1b[0m");
         }
+    } catch {
+        await context.reddit.createWikiPage({ subredditName, page: wikiPageName, content: markdown, reason: `Initial setup` });
+        await context.reddit.updateWikiPageSettings({
+            subredditName,
+            page: wikiPageName,
+            listed: true,
+            permLevel: correctPermissionLevel,
+        });
+        logger.info("\x1b[36m[Leaderboard] Wiki page created and configured.\x1b[0m");
     }
 
-    logger.info("Leaderboard update job completed.");
+    logger.info("\x1b[32m[Leaderboard] Update job completed.\x1b[0m");
 }
 
 function capitalize(word: string): string {
