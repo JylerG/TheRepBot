@@ -21,6 +21,6 @@ export async function onAppInstallOrUpgrade (_: AppInstall | AppUpgrade, context
     await context.scheduler.runJob({
         name: "updateLeaderboard",
         runAt: new Date(),
-        data: { reason: "ReputatorBot has been installed or upgraded." },
+        data: { reason: "TheRepBot has been installed or upgraded." },
     });
 }

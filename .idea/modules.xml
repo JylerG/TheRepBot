@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/reputatorbot-main.iml" filepath="$PROJECT_DIR$/.idea/reputatorbot-main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/TheRepBot-main.iml" filepath="$PROJECT_DIR$/.idea/TheRepBot-main.iml" />
     </modules>
   </component>
 </project>

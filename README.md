@@ -6,7 +6,7 @@ The app gets triggered when a comment is posted or edited, but only never award 
 
 You can also set an optional post flair if a point is awarded, such as to mark the question as "Resolved".
 
-The app has backup and restore functionality from 1.4 onwards, which enables points to be preserved if you uninstall the app or if you want to import data from a previous reputation points app. For technical details of this function, please [see here](https://www.reddit.com/r/fsvapps/wiki/reputatorbotbackup/).
+The app has backup and restore functionality from 1.4 onwards, which enables points to be preserved if you uninstall the app or if you want to import data from a previous reputation points app. For technical details of this function, please [see here](https://www.reddit.com/r/fsvapps/wiki/TheRepBotbackup/).
 
 ## Custom Post
 
@@ -35,7 +35,7 @@ Data for users is removed from the app within 48 hours from v1.3 onwards.
 
 ## Acknowledgements
 
-[Code edited from u/fsv's ReputatorBot](https://github.com/fsvreddit/reputatorbot).
+[Code edited from u/fsv's TheRepBot](https://github.com/fsvreddit/reputatorbot).
 
 ## About
 
@@ -44,7 +44,7 @@ This app is open source and licenced under the BSD 3-Clause Licence. You can fin
 ## Version History
 
 ### v0.0.6
-* Kept bits of code from ReputatorBot while implementing custom code
+* Kept bits of code from TheRepBot while implementing custom code
 * Set up a baseline for what should be used
 * Note that this bot's source code has changed since this README/project was first created and is why these notes may seem weird with what the code shows
 ### 0.0.5

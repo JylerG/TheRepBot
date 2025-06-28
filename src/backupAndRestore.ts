@@ -36,7 +36,7 @@ export function decompressScores (blob: string): CompactScore[] {
     return JSON.parse(json) as CompactScore[];
 }
 
-const BACKUP_WIKI_PAGE = "reputatorbot/backup";
+const BACKUP_WIKI_PAGE = "therepbot/backup";
 
 export async function backupAllScores (_: MenuItemOnPressEvent, context: Context) {
     const backupEnabled = await context.settings.get<boolean>(AppSetting.EnableBackup);
@@ -83,7 +83,7 @@ export async function backupAllScores (_: MenuItemOnPressEvent, context: Context
     }
 
     context.ui.showToast({
-        text: "ReputatorBot points have been backed up to the wiki",
+        text: "TheRepBot points have been backed up to the wiki",
         appearance: "success",
     });
 }
@@ -184,7 +184,7 @@ function backupScoreIsHigher (backupScore: CompactScore, existingScores: ZMember
 }
 
 export const restoreForm: Form = {
-    title: "Restore ReputatorBot Points",
+    title: "Restore TheRepBot Points",
     fields: [
         {
             name: "action",

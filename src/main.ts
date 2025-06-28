@@ -62,7 +62,7 @@ Devvit.addMenuItem({
 export const manualSetPointsForm = Devvit.createForm(data => ({ fields: data.fields as FormField[] }), manualSetPointsFormHandler);
 
 Devvit.addMenuItem({
-    label: "Set TherepBot score manually",
+    label: "Set TheRepBot score manually",
     forUserType: "moderator",
     location: "comment",
     onPress: handleManualPointSetting,

@@ -10,6 +10,73 @@ import { manualSetPointsForm } from "./main.js";
 
 export const POINTS_STORE_KEY = "thanksPointsStore";
 
+const LEADERBOARD_KEYS = {
+  daily: "thanksPointsStore:daily",
+  weekly: "thanksPointsStore:weekly",
+  monthly: "thanksPointsStore:monthly",
+  yearly: "thanksPointsStore:yearly",
+  alltime: "thanksPointsStore:alltime",
+};
+
+async function updateLeaderboardWikiPages(context: TriggerContext) {
+    const leaderboardConfigs = [
+        { key: LEADERBOARD_KEYS.daily, wikiPage: "scoreboard_daily", title: "Daily Leaderboard" },
+        { key: LEADERBOARD_KEYS.weekly, wikiPage: "scoreboard_weekly", title: "Weekly Leaderboard" },
+        { key: LEADERBOARD_KEYS.monthly, wikiPage: "scoreboard_monthly", title: "Monthly Leaderboard" },
+        { key: LEADERBOARD_KEYS.yearly, wikiPage: "scoreboard_yearly", title: "Yearly Leaderboard" },
+        { key: LEADERBOARD_KEYS.alltime, wikiPage: "scoreboard_alltime", title: "All-Time Leaderboard" },
+    ];
+
+    for (const { key, wikiPage, title } of leaderboardConfigs) {
+        const content = await generateLeaderboardMarkdown(context, key, title);
+        await context.reddit.updateWikiPage({
+            subredditName: context.subredditName ?? await getSubredditName(context),
+            page: wikiPage,
+            content,
+            reason: `Updating ${title}`,
+        });
+        console.log(`Updated wiki page: ${wikiPage}`);
+    }
+}
+
+
+async function generateLeaderboardMarkdown(context: TriggerContext, key: string, title: string, topN: number = Number(AppSetting.LeaderboardSize)): Promise<string> {
+    const membersWithScores = await context.redis.zRange(key, 0, topN - 1);
+    if (membersWithScores.length === 0) {
+        return `# ${title}\n\n| Rank | User | Points |\n|---|No Scores Currently|---|\n`;
+    }
+
+    let markdown = `# ${title}\n\n| Rank | User | Points |\n|---|---|---|\n`;
+    let rank = 1;
+    for (const { member, score } of membersWithScores) {
+        markdown += `| ${rank} | /u/${member} | ${score.toFixed(0)} |\n`;
+        rank++;
+    }
+    return markdown;
+}
+
+
+async function resetLeaderboard(context: TriggerContext, key: string) {
+    // Clear the sorted set to reset leaderboard
+    await context.redis.del(key);
+    console.log(`Leaderboard ${key} reset.`);
+}
+
+async function incrementUserScores(username: string, increment = 1, context: TriggerContext) {
+    const keys = [
+        LEADERBOARD_KEYS.daily,
+        LEADERBOARD_KEYS.weekly,
+        LEADERBOARD_KEYS.monthly,
+        LEADERBOARD_KEYS.yearly,
+        LEADERBOARD_KEYS.alltime,
+    ];
+
+    for (const key of keys) {
+        await context.redis.zIncrBy(key, username, increment);
+    }
+}
+
+
 async function replyToUser (context: TriggerContext, replyMode: ReplyOptions, toUserName: string, messageBody: string, commentId: string) {
     if (replyMode === ReplyOptions.NoReply) {
         return;
@@ -111,7 +178,26 @@ async function getUserIsSuperuser (username: string, context: TriggerContext): P
     }
 }
 
-export async function handleThanksEvent (event: CommentSubmit | CommentUpdate, context: TriggerContext) {
+export async function replacePlaceholders(template: string, placeholders: {
+    awardee: string;
+    awarder: string;
+    point: string;
+    total: number;
+    symbol: string;
+    scoreboard: string;
+}): Promise<string> {
+    let result = template;
+    result = replaceAll(result, "{awardee}", placeholders.awardee);
+    result = replaceAll(result, "{awarder}", placeholders.awarder);
+    result = replaceAll(result, "{point}", placeholders.point);
+    result = replaceAll(result, "{total}", placeholders.total.toString());
+    result = replaceAll(result, "{symbol}", placeholders.symbol);
+    result = replaceAll(result, "{scoreboard}", placeholders.scoreboard);
+    return result;
+}
+
+
+export async function handleThanksEvent(event: CommentSubmit | CommentUpdate, context: TriggerContext) {
     if (!event.comment || !event.post || !event.author || !event.subreddit) {
         return;
     }
@@ -128,9 +214,9 @@ export async function handleThanksEvent (event: CommentSubmit | CommentUpdate, c
 
     const settings = await context.settings.getAll();
 
-    const userCommandVal = settings[AppSetting.ThanksCommand] as string | undefined;
+    const userCommandVal = settings[AppSetting.PointTriggerWords] as string | undefined;
     const userCommandList = userCommandVal?.split("\n").map(command => command.toLowerCase().trim()) ?? [];
-    const modCommand = settings[AppSetting.ModThanksCommand] as string | undefined;
+    const modCommand = settings[AppSetting.ModAwardCommand] as string | undefined;
 
     let containsUserCommand: boolean;
     if (settings[AppSetting.ThanksCommandUsesRegex]) {
@@ -160,7 +246,7 @@ export async function handleThanksEvent (event: CommentSubmit | CommentUpdate, c
 
     const isMod = await isModerator(context, event.subreddit.name, event.author.name);
 
-    if (containsUserCommand && event.author.id !== event.post.authorId) {
+    if (containsUserCommand && !modCommand) {
         if (!settings[AppSetting.AnyoneCanAwardPoints]) {
             console.log(`${event.comment.id}: points attempt made by ${event.author.name} who is not the OP`);
             return;
@@ -249,7 +335,6 @@ export async function handleThanksEvent (event: CommentSubmit | CommentUpdate, c
         let postFlairCSSClass = settings[AppSetting.SetPostFlairCSSClass] as string | undefined;
         let postFlairTemplate = settings[AppSetting.SetPostFlairTemplate] as string | undefined;
 
-        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
         if (!postFlairText) {
             postFlairText = undefined;
         }
@@ -257,7 +342,7 @@ export async function handleThanksEvent (event: CommentSubmit | CommentUpdate, c
         if (!postFlairCSSClass || postFlairTemplate) {
             postFlairCSSClass = undefined;
         }
-        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+
         if (!postFlairTemplate) {
             postFlairTemplate = undefined;
         }
@@ -278,26 +363,38 @@ export async function handleThanksEvent (event: CommentSubmit | CommentUpdate, c
     const now = new Date();
     await context.redis.set(redisKey, now.getTime().toString(), { expiration: addWeeks(now, 1) });
 
+    // Prepare placeholders for notifications
+    const pointName = (settings[AppSetting.PointName] as string) ?? "point";
+    const subredditSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
+    const scoreboardTemplate = (settings[AppSetting.ScoreboardLink] as string) ?? `https://reddit.com/r/${event.subreddit.name}/wiki/scoreboard`;
+    const scoreboardLink = scoreboardTemplate.replace("{subreddit}", event.subreddit.name);
+
+    const placeholders = {
+        awardee: parentComment.authorName,
+        awarder: event.author.name,
+        point: pointName,
+        total: newScore,
+        symbol: subredditSymbol,
+        scoreboard: scoreboardLink,
+    };
+
+    // Notify awarding user of success
     const notifyOnSuccess = (settings[AppSetting.NotifyOnSuccess] as string[] | [ReplyOptions.NoReply])[0] as ReplyOptions;
     if (notifyOnSuccess !== ReplyOptions.NoReply) {
-        let message = settings[AppSetting.NotifyOnSuccessTemplate] as string | undefined ?? TemplateDefaults.NotifyOnSuccessTemplate;
-        message = replaceAll(message, "{{authorname}}", markdownEscape(event.author.name));
-        message = replaceAll(message, "{{awardeeusername}}", markdownEscape(parentComment.authorName));
-        message = replaceAll(message, "{{permalink}}", parentComment.permalink);
-        message = replaceAll(message, "{{score}}", newScore.toString());
+        let messageTemplate = (settings[AppSetting.NotifyOnSuccessTemplate] as string | undefined) ?? TemplateDefaults.NotifyOnSuccessTemplate;
+        const message = await replacePlaceholders(messageTemplate, placeholders);
         await replyToUser(context, notifyOnSuccess, event.author.name, message, event.comment.id);
     }
 
+    // Notify awarded user
     const notifyAwardedUser = (settings[AppSetting.NotifyAwardedUser] as string[] | [ReplyOptions.NoReply])[0] as ReplyOptions;
     if (notifyAwardedUser !== ReplyOptions.NoReply) {
-        let message = settings[AppSetting.NotifyAwardedUserTemplate] as string | undefined ?? TemplateDefaults.NotifyAwardedUserTemplate;
-        message = replaceAll(message, "{{authorname}}", markdownEscape(event.author.name));
-        message = replaceAll(message, "{{awardeeusername}}", markdownEscape(parentComment.authorName));
-        message = replaceAll(message, "{{permalink}}", parentComment.permalink);
-        message = replaceAll(message, "{{score}}", newScore.toString());
-        await replyToUser(context, notifyAwardedUser, event.author.name, message, parentComment.id);
+        let messageTemplate = (settings[AppSetting.NotifyAwardedUserTemplate] as string | undefined) ?? TemplateDefaults.NotifyAwardedUserTemplate;
+        const message = await replacePlaceholders(messageTemplate, placeholders);
+        await replyToUser(context, notifyAwardedUser, parentComment.authorName, message, parentComment.id);
     }
 }
+
 
 async function setUserScore (username: string, newScore: number, flairScoreIsNaN: boolean, context: TriggerContext, settings: SettingsValues) {
     // Store the user's new score

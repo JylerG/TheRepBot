@@ -12,7 +12,7 @@ export const customPostForm: Form = {
             label: "Post title",
             name: "postTitle",
             type: "string",
-            defaultValue: "ReputatorBot High Scores",
+            defaultValue: "TheRepBot High Scores",
         },
         {
             label: "Number of users to include",
@@ -53,7 +53,7 @@ export async function createCustomPostFormHandler (event: FormOnSubmitEvent<JSON
     }
 
     let postTitle = event.values.postTitle as string | undefined;
-    postTitle ??= "ReputatorBot High Scores";
+    postTitle ??= "TheRepBot High Scores";
 
     const subredditName = await getSubredditName(context);
 
@@ -84,7 +84,7 @@ export function createCustomPostMenuHandler (_: MenuItemOnPressEvent, context: C
 
 export const leaderboardCustomPost: CustomPostType = {
     name: "leaderboardCustomPost",
-    description: "Post that displays ReputatorBot high scorers",
+    description: "Post that displays TheRepBot high scorers",
     height: "tall",
     render: (context) => {
         const state = new LeaderboardState(context);

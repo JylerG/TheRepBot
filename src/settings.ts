@@ -14,10 +14,15 @@ export enum ExistingFlairOverwriteHandling {
     NeverSet = "neverset",
 }
 
+export enum LeaderboardMode {
+    Off = "off",
+    ModOnly = "modonly",
+    Public = "public",
+}
+
 export enum AppSetting {
-    ThanksCommand = "successMessage",
     ThanksCommandUsesRegex = "thanksCommandUsesRegex",
-    ModThanksCommand = "approveCommand",
+    ModAwardCommand = "approveCommand",
     AnyoneCanAwardPoints = "anyoneCanAwardPoints",
     SuperUsers = "superUsers",
     AutoSuperuserThreshold = "autoSuperuserThreshold",
@@ -40,6 +45,7 @@ export enum AppSetting {
     SetPostFlairCSSClass = "setPostFlairOnThanksCSSClass",
     SetPostFlairTemplate = "setPostFlairOnThanksTemplate",
     LeaderboardMode = "leaderboardMode",
+    ScoreboardLink = "scoreboardLink",
     LeaderboardWikiPage = "leaderboardWikiPage",
     LeaderboardSize = "leaderboardSize",
     LeaderboardHelpPage = "leaderboardHelpPage",
@@ -47,24 +53,23 @@ export enum AppSetting {
     EnableBackup = "enableBackup",
     EnableRestore = "enableRestore",
     PrioritiseScoreFromFlair = "prioritiseScoreFromFlair",
-    POINTTRIGGERWORDS = "pointTriggerWords",
-    SUCCESSMESSAGE = "successMessage",
-    SELFAWARDMESSAGE = "selfAwardMessage",
-    DUPLICATEAWARDMESSAGE = "duplicateAwardMessage",
-    BOTAWARDMESSAGE = "botAwardMessage",
-    POINTNAME = "pointName",
-    DISALLOWEDFLAIRS = "disallowedFlairs",
-    DISALLOWEDFLAIRMESSAGE = "disallowedFlairMessage",
-    APPROVECOMMAND = "approveCommand",
-    APPROVEMESSAGE = "approveMessage",
-    DENYCOMMAND = "denyCommand",
-    DENYMESSAGE = "denyMessage",
-    POINTSYMBOL = "pointSymbol",
-    ACCESSCONTROL = "accessControl",
-    MODONLYDISALLOWEDMESSAGE = "modOnlyDisallowedMessage",
-    APPROVEDONLYDISALLOWEDMESSAGE = "approvedOnlyDisallowedMessage",
-    ALLOWUNFLAIREDPOSTS = "allowUnflairedPosts",
-    UNFLAIREDPOSTMESSAGE = "unflairedPostMessage",
+    PointTriggerWords = "pointTriggerWords",
+    SuccessMessage = "successMessage",
+    SelfAwardMessage = "selfAwardMessage",
+    DuplicateAwardMessage = "duplicateAwardMessage",
+    BotAwardMessage = "botAwardMessage",
+    PointName = "pointName",
+    DisallowedFlairs = "disallowedFlairs",
+    DisallowedFlairMessage = "disallowedFlairMessage",
+    ApproveMessage = "approveMessage",
+    DenyCommand = "denyCommand",
+    DenyMessage = "denyMessage",
+    PointSymbol = "pointSymbol",
+    AccessControl = "accessControl",
+    ModOnlyDisallowedMessage = "modOnlyDisallowedMessage",
+    ApprovedOnlyDisallowedMessage = "approvedOnlyDisallowedMessage",
+    AllowUnflairedPosts = "allowUnflairedPosts",
+    UnflairedPostMessage = "unflairedPostMessage",
 }
 
 export const appSettings: SettingsFormField[] = [
@@ -74,31 +79,59 @@ export const appSettings: SettingsFormField[] = [
         label: "Point System Settings",
         fields: [
             {
-                type: "string",
-                name: AppSetting.POINTTRIGGERWORDS,
-                label: "Trigger Words",
-                helpText:
-                    "Comma-separated list of trigger words users can type to award points (e.g., !award, .point).",
-                defaultValue: "!award",
+                type: "select",
+                name: AppSetting.AccessControl,
+                label: "Who Can Award?",
+                helpText: "Choose who is allowed to award points.",
+                options: [
+                    { label: "Moderators Only", value: "moderators-only" },
+                    {
+                        label: "Mods and Approved Users",
+                        value: "moderators-and-approved-users",
+                    },
+                    { label: "Everyone", value: "everyone" },
+                ],
+                defaultValue: ["moderators-only"],
+                onValidate: selectFieldHasOptionChosen,
             },
             {
                 type: "string",
-                name: AppSetting.APPROVECOMMAND,
-                label: "Moderator Award Command",
+                name: AppSetting.DisallowedFlairs,
+                label: "Disallowed Flairs",
                 helpText:
-                    "Command moderators use to override and award points.",
+                    "Comma-separated flair texts where points cannot be awarded.",
+                defaultValue: "",
+            },
+            {
+                type: "paragraph",
+                name: AppSetting.PointTriggerWords,
+                label: "Trigger Words",
+                helpText:
+                    "List of trigger words users can type to award points (e.g., !award, .point). Each command should be on a new line. If you want to use regex, enable the option below.",
+                defaultValue: "!award",
+                onValidate: ({ value }) => {
+                    if (!value) {
+                        return "You must specify at least one command";
+                    }
+                },
+            },
+            {
+                name: AppSetting.ModAwardCommand,
+                type: "string",
+                label: "Alternate command for mods and trusted users to award reputation points",
+                helpText: "Optional.",
                 defaultValue: "!modaward",
             },
             {
                 type: "string",
-                name: AppSetting.DENYCOMMAND,
+                name: AppSetting.DenyCommand,
                 label: "Moderator Deny Command",
                 helpText: "Command to revoke a previously awarded point.",
                 defaultValue: "!remove",
             },
             {
                 type: "string",
-                name: AppSetting.POINTNAME,
+                name: AppSetting.PointName,
                 label: "Point Name",
                 helpText:
                     "The name shown in award messages, like 'point', 'kudo', etc.",
@@ -106,11 +139,18 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "string",
-                name: AppSetting.POINTSYMBOL,
+                name: AppSetting.PointSymbol,
                 label: "Point Symbol",
                 helpText:
-                    "Optional emoji or character to show alongside point totals.",
+                    "Optional emoji or character to show alongside point totals. Leave empty for no symbol.",
                 defaultValue: "⭐",
+            },
+            {
+                name: AppSetting.ThanksCommandUsesRegex,
+                type: "boolean",
+                label: "Treat user commands as regular expressions",
+                defaultValue: false,
+                onValidate: validateRegexes,
             },
         ],
     },
@@ -123,9 +163,18 @@ export const appSettings: SettingsFormField[] = [
                 type: "select",
                 label: "Flair setting option",
                 options: [
-                    { label: "Set flair to new score, if flair unset or flair is numeric", value: ExistingFlairOverwriteHandling.OverwriteNumeric },
-                    { label: "Set flair to new score, if user has no flair", value: ExistingFlairOverwriteHandling.OverwriteAll },
-                    { label: "Never set flair", value: ExistingFlairOverwriteHandling.NeverSet },
+                    {
+                        label: "Set flair to new score, if flair unset or flair is numeric",
+                        value: ExistingFlairOverwriteHandling.OverwriteNumeric,
+                    },
+                    {
+                        label: "Set flair to new score, if user has no flair",
+                        value: ExistingFlairOverwriteHandling.OverwriteAll,
+                    },
+                    {
+                        label: "Never set flair",
+                        value: ExistingFlairOverwriteHandling.NeverSet,
+                    },
                 ],
                 multiSelect: false,
                 defaultValue: [ExistingFlairOverwriteHandling.OverwriteNumeric],
@@ -135,13 +184,15 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.CSSClass,
                 type: "string",
                 label: "CSS class to use for points flairs",
-                helpText: "Optional. Please choose either a CSS class or flair template, not both.",
+                helpText:
+                    "Optional. Please choose either a CSS class or flair template, not both.",
             },
             {
                 name: AppSetting.FlairTemplate,
                 type: "string",
                 label: "Flair template ID to use for points flairs",
-                helpText: "Optional. Please choose either a CSS class or flair template, not both.",
+                helpText:
+                    "Optional. Please choose either a CSS class or flair template, not both.",
                 onValidate: isFlairTemplateValid,
             },
         ],
@@ -154,7 +205,8 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.SetPostFlairOnThanks,
                 type: "boolean",
                 label: "Set post flair when a reputation point is awarded",
-                helpText: "This can be used to mark a question as resolved, or answered",
+                helpText:
+                    "This can be used to mark a question as resolved, or answered",
                 defaultValue: false,
             },
             {
@@ -166,13 +218,15 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.SetPostFlairCSSClass,
                 type: "string",
                 label: "Post Flair CSS Class",
-                helpText: "Optional. Please choose either a CSS class or flair template, not both.",
+                helpText:
+                    "Optional. Please choose either a CSS class or flair template, not both.",
             },
             {
                 name: AppSetting.SetPostFlairTemplate,
                 type: "string",
                 label: "Post Flair Template ID",
-                helpText: "Optional. Please choose either a CSS class or flair template, not both.",
+                helpText:
+                    "Optional. Please choose either a CSS class or flair template, not both.",
                 onValidate: isFlairTemplateValid,
             },
         ],
@@ -183,7 +237,7 @@ export const appSettings: SettingsFormField[] = [
         fields: [
             {
                 type: "string",
-                name: AppSetting.SUCCESSMESSAGE,
+                name: AppSetting.SuccessMessage,
                 label: "Success Message",
                 helpText:
                     "Message when a point is awarded. You can use {awardee} to get the person being awarded's username, {awarder} to get the person awarding's username, {symbol} to get the symbol (if one is specified), {total} to get the awardee's total score, {name} to get the name of the point, {scoreboard} to link to the scoreboard wiki page.",
@@ -192,7 +246,7 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "string",
-                name: AppSetting.SELFAWARDMESSAGE,
+                name: AppSetting.SelfAwardMessage,
                 label: "Self Award Message",
                 helpText:
                     "Shown when someone tries to award themselves. You can use {name}.",
@@ -200,7 +254,7 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "string",
-                name: AppSetting.DUPLICATEAWARDMESSAGE,
+                name: AppSetting.DuplicateAwardMessage,
                 label: "Duplicate Award Message",
                 helpText:
                     "Shown when someone tries to award a post they've already awarded. You can use {awardee}, {total}, {name}.",
@@ -209,7 +263,7 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "string",
-                name: AppSetting.BOTAWARDMESSAGE,
+                name: AppSetting.BotAwardMessage,
                 label: "Bot Award Message",
                 helpText:
                     "Shown when someone tries to award the bot. You can use {name}.",
@@ -217,7 +271,7 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "string",
-                name: AppSetting.APPROVEMESSAGE,
+                name: AppSetting.ApproveMessage,
                 label: "Moderator Award Message",
                 helpText:
                     "Shown when a mod awards a point. Use {awardee}, {total}, {symbol}, {name}.",
@@ -226,7 +280,7 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "string",
-                name: AppSetting.DENYMESSAGE,
+                name: AppSetting.DenyMessage,
                 label: "Moderator Deny Message",
                 helpText:
                     "Message when a mod removes a point. You can use {name}.",
@@ -234,16 +288,16 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "string",
-                name: AppSetting.MODONLYDISALLOWEDMESSAGE,
-                label: "Non-Mod Access Denied",
+                name: AppSetting.ModOnlyDisallowedMessage,
+                label: "Non-Mod Access Denied Message",
                 helpText:
                     "Message for users when only mods can award. You can use {name}.",
                 defaultValue: "Only moderators are allowed to award {name}s.",
             },
             {
                 type: "string",
-                name: AppSetting.APPROVEDONLYDISALLOWEDMESSAGE,
-                label: "Non-Approved Access Denied",
+                name: AppSetting.ApprovedOnlyDisallowedMessage,
+                label: "Non-Approved Access Denied Message",
                 helpText:
                     "Message when a non-approved user tries to award. You can use {name}.",
                 defaultValue:
@@ -251,7 +305,7 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "string",
-                name: AppSetting.DISALLOWEDFLAIRMESSAGE,
+                name: AppSetting.DisallowedFlairMessage,
                 label: "Disallowed Flair Message",
                 helpText:
                     "Message shown when awarding on disallowed flair. You can use {name}.",
@@ -260,7 +314,7 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "string",
-                name: AppSetting.UNFLAIREDPOSTMESSAGE,
+                name: AppSetting.UnflairedPostMessage,
                 label: "Unflaired Post Message",
                 helpText: "Shown when trying to award on an unflaired post.",
                 defaultValue:
@@ -269,32 +323,25 @@ export const appSettings: SettingsFormField[] = [
         ],
     },
     {
-        type: "select",
-        name: AppSetting.ACCESSCONTROL,
-        label: "Who Can Award?",
-        helpText: "Choose who is allowed to award points.",
-        options: [
-            { label: "Moderators Only", value: "moderators-only" },
-            {
-                label: "Mods and Approved Users",
-                value: "moderators-and-approved-users",
-            },
-            { label: "Everyone", value: "everyone" },
-        ],
-        defaultValue: ["moderators-only"],
-        onValidate: selectFieldHasOptionChosen,
-    },
-    {
-        type: "string",
-        name: AppSetting.DISALLOWEDFLAIRS,
-        label: "Disallowed Flairs",
-        helpText: "Comma-separated flair texts where points cannot be awarded.",
-        defaultValue: "",
-    },
-    {
         type: "group",
         label: "Misc Settings",
         fields: [
+            {
+                name: AppSetting.LeaderboardMode,
+                type: "select",
+                options: [
+                    { label: "Off", value: LeaderboardMode.Off },
+                    { label: "Mod Only", value: LeaderboardMode.ModOnly },
+                    {
+                        label: "Default settings for wiki",
+                        value: LeaderboardMode.Public,
+                    },
+                ],
+                label: "Wiki Leaderboard Mode",
+                multiSelect: false,
+                defaultValue: [LeaderboardMode.Off],
+                onValidate: selectFieldHasOptionChosen,
+            },
             {
                 name: AppSetting.LeaderboardSize,
                 type: "number",
@@ -308,14 +355,36 @@ export const appSettings: SettingsFormField[] = [
                 },
             },
             {
+                name: AppSetting.ScoreboardLink,
+                type: "string",
+                defaultValue:
+                    "https://reddit.com/r/{subreddit}/wiki/leaderboard",
+                label: "Scoreboard Wiki Link",
+                helpText:
+                    "Full URL to the scoreboard wiki page. Use '{subreddit}' placeholder to dynamically insert subreddit name.",
+            },
+            {
+                name: AppSetting.LeaderboardWikiPage,
+                type: "string",
+                label: "Leaderboard Wiki Page",
+                defaultValue: "therepbotleaderboard",
+                onValidate: ({ value }) => {
+                    const wikiPageNameRegex = /^[\w/]+$/i;
+                    if (value && !wikiPageNameRegex.test(value)) {
+                        return "Invalid wiki page name. Wiki page name must consist of alphanumeric characters and / characters only.";
+                    }
+                },
+            },
+            {
                 name: AppSetting.LeaderboardHelpPage,
                 type: "string",
                 label: "Leaderboard Help Page",
-                helpText: "Optional. A web page (e.g. on your wiki, or an announcement post) telling users how to use reputation points on your subreddit. Please use a full URL, e.g. https://www.reddit.com/r/subreddit/wiki/yourLeaderboard.",
+                helpText:
+                    "Optional. A web page (e.g. on your wiki, or an announcement post) telling users how to use reputation points on your subreddit. Please use a full URL, e.g. https://www.reddit.com/r/yourSubreddit/wiki/yourLeaderboard.",
             },
             {
                 type: "select",
-                name: AppSetting.ALLOWUNFLAIREDPOSTS,
+                name: AppSetting.AllowUnflairedPosts,
                 label: "Allow on Unflaired Posts?",
                 helpText: "Allow awarding on posts without flair?",
                 options: [
@@ -333,22 +402,6 @@ export const appSettings: SettingsFormField[] = [
                     "Wiki page name that explains how the point system works.",
                 defaultValue: "credit-system",
             },
-            {
-                type: "string",
-                name: "creditLog",
-                label: "Award Log Wiki Page",
-                helpText: "Page where all awards are logged.",
-                defaultValue: "credit-log",
-            },
-            {
-                type: "boolean",
-                name: AppSetting.ThanksCommandUsesRegex,
-                label: "Use Regex for Trigger Commands?",
-                helpText:
-                    "If enabled, trigger commands are treated as regular expressions.",
-                defaultValue: false,
-                onValidate: validateRegexes,
-            },
         ],
     },
     {
@@ -365,13 +418,13 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.EnableRestore,
                 type: "boolean",
                 label: "Enable Restore",
-                helpText: "This should be left disabled to prevent inadvertent score overwriting. Only enable during restore operations.",
+                helpText:
+                    "This should be left disabled to prevent inadvertent score overwriting. Only enable during restore operations.",
                 defaultValue: false,
             },
         ],
     },
 ];
-
 
 export enum ReplyOptions {
     NoReply = "none",
@@ -385,17 +438,11 @@ const replyOptionChoices = [
     { label: "Reply as comment", value: ReplyOptions.ReplyAsComment },
 ];
 
-export enum LeaderboardMode {
-    Off = "off",
-    ModOnly = "modonly",
-    Public = "public",
-}
-
 export enum TemplateDefaults {
-    NotifyOnErrorTemplate = "Hello {{authorname}},\n\nYou cannot award a point to yourself.\n\nPlease contact the mods if you have any questions.\n\n---\n\n^(I am a bot)",
-    NotifyOnSuccessTemplate = "You have awarded 1 point to {{awardeeusername}}.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
-    NotifyAwardedUserTemplate = "Hello {{awardeeusername}},\n\nYou have been awarded a point for your contribution! New score: {{score}}\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
-    NotifyOnSuperuserTemplate = "Hello {{authorname}},\n\nNow that you have reached {{threshold}} points you can now award points yourself, even if you're not the OP. Please use the command \"{{pointscommand}}\" if you'd like to do this.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
+    NotifyOnErrorTemplate = "Hello {{awarder}},\n\nYou cannot award a point to yourself.\n\nPlease contact the mods if you have any questions.\n\n---\n\n^(I am a bot)",
+    NotifyOnSuccessTemplate = "You have awarded 1 point to {{awardee}}.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
+    NotifyAwardedUserTemplate = "Hello {{awardee}},\n\nYou have been awarded a point for your contribution! New score: {{score}}\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
+    NotifyOnSuperuserTemplate = "Hello {{awardee}},\n\nNow that you have reached {{threshold}} points you can now award points yourself, even if you're not the OP. Please use the command \"{{command}}\" if you'd like to do this.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
 }
 
 function isFlairTemplateValid(event: SettingsFormFieldValidatorEvent<string>) {
@@ -449,7 +496,7 @@ export async function validateRegexJobHandler(
 
     console.log("Running settings validator");
 
-    const userCommandVal = settings[AppSetting.ThanksCommand] as
+    const userCommandVal = settings[AppSetting.PointTriggerWords] as
         | string
         | undefined;
     const userCommandList =
@@ -484,7 +531,7 @@ export async function validateRegexJobHandler(
         (await context.reddit.getCurrentSubreddit()).name;
 
     await context.reddit.sendPrivateMessage({
-        subject: `ReputatorBot settings on /r/${subredditName} are invalid`,
+        subject: `TheRepBot settings on /r/${subredditName} are invalid`,
         text: message,
         to: username,
     });

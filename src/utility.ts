@@ -24,3 +24,21 @@ export async function getSubredditName (context: TriggerContext): Promise<string
     await context.redis.set("subredditname", subreddit.name, { expiration: addWeeks(new Date(), 1) });
     return subreddit.name;
 }
+
+export async function replacePlaceholders(template: string, placeholders: {
+    awardee: string;
+    awarder: string;
+    point: string;
+    total: number;
+    symbol: string;
+    scoreboard: string;
+}): Promise<string> {
+    let result = template;
+    result = replaceAll(result, "{awardee}", placeholders.awardee);
+    result = replaceAll(result, "{awarder}", placeholders.awarder);
+    result = replaceAll(result, "{point}", placeholders.point);
+    result = replaceAll(result, "{total}", placeholders.total.toString());
+    result = replaceAll(result, "{symbol}", placeholders.symbol);
+    result = replaceAll(result, "{scoreboard}", placeholders.scoreboard);
+    return result;
+}
