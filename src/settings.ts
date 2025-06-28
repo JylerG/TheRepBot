@@ -494,13 +494,7 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.LeaderboardWikiPage,
                 type: "string",
                 label: "Leaderboard Wiki Page",
-                defaultValue: "therepbotleaderboard",
-                onValidate: ({ value }) => {
-                    const wikiPageNameRegex = /^[\w/]+$/i;
-                    if (value && !wikiPageNameRegex.test(value)) {
-                        return "Invalid wiki page name. Wiki page name must consist of alphanumeric characters and / characters only.";
-                    }
-                },
+                defaultValue: "leaderboard",
             },
             {
                 name: AppSetting.LeaderboardHelpPage,
