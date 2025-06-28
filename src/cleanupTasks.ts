@@ -1,27 +1,38 @@
-import { TriggerContext, User, ZMember } from "@devvit/public-api";
+import { TriggerContext } from "@devvit/public-api";
 import { addDays, addMinutes, subMinutes } from "date-fns";
 import { POINTS_STORE_KEY } from "./thanksPoints.js";
 import { CronExpressionParser } from "cron-parser";
 import { ADHOC_CLEANUP_JOB, CLEANUP_JOB_CRON } from "./constants.js";
+import { logger } from "./logger.js";
 
 const CLEANUP_LOG_KEY = "cleanupStore";
 const DAYS_BETWEEN_CHECKS = 28;
 
-export async function setCleanupForUsers (usernames: string[], context: TriggerContext) {
+export async function setCleanupForUsers(usernames: string[], context: TriggerContext) {
     if (usernames.length === 0) {
+        logger.debug("No usernames passed to setCleanupForUsers.");
         return;
     }
-    await context.redis.zAdd(CLEANUP_LOG_KEY, ...usernames.map(username => ({ member: username, score: addDays(new Date(), DAYS_BETWEEN_CHECKS).getTime() })));
+
+    await context.redis.zAdd(
+        CLEANUP_LOG_KEY,
+        ...usernames.map(username => ({
+            member: username,
+            score: addDays(new Date(), DAYS_BETWEEN_CHECKS).getTime(),
+        }))
+    );
+
+    logger.info(`Scheduled cleanup for ${usernames.length} users.`);
 }
 
-async function userActive (username: string, context: TriggerContext): Promise<boolean> {
-    let user: User | undefined;
+async function userActive(username: string, context: TriggerContext): Promise<boolean> {
     try {
-        user = await context.reddit.getUserByUsername(username);
+        const user = await context.reddit.getUserByUsername(username);
+        return !!user;
     } catch {
+        logger.warn(`Failed to retrieve user: u/${username} — assuming deleted or suspended.`);
         return false;
     }
-    return user !== undefined;
 }
 
 interface UserActive {
@@ -29,43 +40,50 @@ interface UserActive {
     isActive: boolean;
 }
 
-export async function cleanupDeletedAccounts (_: unknown, context: TriggerContext) {
-    const items = await context.redis.zRange(CLEANUP_LOG_KEY, 0, new Date().getTime(), { by: "score" });
+export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext) {
+    logger.info("Starting cleanupDeletedAccounts job...");
+
+    const now = new Date().getTime();
+    const items = await context.redis.zRange(CLEANUP_LOG_KEY, 0, now, { by: "score" });
+
     if (items.length === 0) {
-        // No user accounts need to be checked.
+        logger.info("No users scheduled for cleanup. Scheduling next adhoc check...");
         await scheduleAdhocCleanup(context);
         return;
     }
 
-    // Check platform is up.
-    await context.reddit.getAppUser();
+    await context.reddit.getAppUser(); // Ensure Reddit is reachable
 
     const itemsToCheck = 50;
-
-    // Get the first N accounts that are due a check.
     const usersToCheck = items.slice(0, itemsToCheck).map(item => item.member);
-    const userStatuses: UserActive[] = [];
 
+    logger.debug("Checking activity for users:", { usersToCheck });
+
+    const userStatuses: UserActive[] = [];
     for (const username of usersToCheck) {
         const isActive = await userActive(username, context);
-        userStatuses.push(({ username, isActive } as UserActive));
+        userStatuses.push({ username, isActive });
     }
 
-    const activeUsers = userStatuses.filter(user => user.isActive).map(user => user.username);
-    const deletedUsers = userStatuses.filter(user => !user.isActive).map(user => user.username);
+    const activeUsers = userStatuses.filter(u => u.isActive).map(u => u.username);
+    const deletedUsers = userStatuses.filter(u => !u.isActive).map(u => u.username);
 
-    // For active users, set their next check date to be one day from now.
+    logger.info("Cleanup results", {
+        totalChecked: userStatuses.length,
+        activeCount: activeUsers.length,
+        deletedCount: deletedUsers.length,
+    });
+
     if (activeUsers.length > 0) {
         await setCleanupForUsers(activeUsers, context);
-        await context.redis.zAdd(CLEANUP_LOG_KEY, ...activeUsers.map(user => ({ member: user, score: addDays(new Date(), DAYS_BETWEEN_CHECKS).getTime() } as ZMember)));
     }
 
-    // For deleted users, remove them from both the cleanup log and the points score.
     if (deletedUsers.length > 0) {
         await context.redis.zRem(POINTS_STORE_KEY, deletedUsers);
         await context.redis.zRem(CLEANUP_LOG_KEY, deletedUsers);
 
-        // Force an immediate leaderboard update, because some accounts newly cleaned up might have been visible there.
+        logger.info(`Removed ${deletedUsers.length} deleted users from Redis and leaderboard.`);
+
         await context.scheduler.runJob({
             name: "updateLeaderboard",
             runAt: new Date(),
@@ -73,10 +91,8 @@ export async function cleanupDeletedAccounts (_: unknown, context: TriggerContex
         });
     }
 
-    console.log(`Cleanup: ${deletedUsers.length}/${userStatuses.length} deleted or suspended.`);
-
     if (items.length > itemsToCheck) {
-        // In a backlog, so force another run.
+        logger.info("Backlog detected — scheduling next cleanup immediately.");
         await context.scheduler.runJob({
             name: "cleanupDeletedAccounts",
             runAt: new Date(),
@@ -86,63 +102,80 @@ export async function cleanupDeletedAccounts (_: unknown, context: TriggerContex
     }
 }
 
-/**
- * Removes cleanup log entries for users without scores, and populates cleanup log entries for users with
- * scores who are not yet in the cleanup log
- */
-export async function populateCleanupLogAndScheduleCleanup (context: TriggerContext) {
-    const existingScoreUsers = (await context.redis.zRange(POINTS_STORE_KEY, 0, -1)).map(score => score.member);
-    const cleanupLogUsers = (await context.redis.zRange(CLEANUP_LOG_KEY, 0, -1)).map(score => score.member);
+export async function populateCleanupLogAndScheduleCleanup(context: TriggerContext) {
+    logger.info("Running populateCleanupLogAndScheduleCleanup...");
 
-    const existingScoreUsersWithoutCleanup = existingScoreUsers.filter(username => !cleanupLogUsers.includes(username));
+    const scoreUsers = (await context.redis.zRange(POINTS_STORE_KEY, 0, -1)).map(u => u.member);
+    const cleanupUsers = (await context.redis.zRange(CLEANUP_LOG_KEY, 0, -1)).map(u => u.member);
 
-    if (existingScoreUsersWithoutCleanup.length > 0) {
-        await context.redis.zAdd(CLEANUP_LOG_KEY, ...existingScoreUsersWithoutCleanup.map(username => ({ member: username, score: addMinutes(new Date(), Math.random() * 60 * 24 * DAYS_BETWEEN_CHECKS).getTime() } as ZMember)));
-        console.log(`OnUpgradeCleanupTasks: Stored records of ${existingScoreUsers.length} users for future cleanup.`);
+    const toAdd = scoreUsers.filter(u => !cleanupUsers.includes(u));
+    const toRemove = cleanupUsers.filter(u => !scoreUsers.includes(u));
+
+    if (toAdd.length > 0) {
+        await context.redis.zAdd(
+            CLEANUP_LOG_KEY,
+            ...toAdd.map(username => ({
+                member: username,
+                score: addMinutes(new Date(), Math.random() * 60 * 24 * DAYS_BETWEEN_CHECKS).getTime(),
+            }))
+        );
+        logger.info(`Added ${toAdd.length} new users to cleanup log.`);
     }
 
-    const cleanupLogUsersWithoutScores = cleanupLogUsers.filter(username => !existingScoreUsers.includes(username));
-    if (cleanupLogUsersWithoutScores.length > 0) {
-        await context.redis.zRem(CLEANUP_LOG_KEY, cleanupLogUsersWithoutScores);
-        console.log(`OnUpgradeCleanupTasks: Removed records of ${existingScoreUsers.length} from cleanup log who don't have scores.`);
+    if (toRemove.length > 0) {
+        await context.redis.zRem(CLEANUP_LOG_KEY, toRemove);
+        logger.info(`Removed ${toRemove.length} obsolete users from cleanup log.`);
     }
 
     const redisKey = "prevTimeBetweenChecks";
-    const prevTimeBetweenChecks = await context.redis.get(redisKey);
+    const prev = await context.redis.get(redisKey);
+    const newValue = JSON.stringify(DAYS_BETWEEN_CHECKS);
 
-    if (JSON.stringify(DAYS_BETWEEN_CHECKS) !== prevTimeBetweenChecks && cleanupLogUsers.length > 0) {
-        await context.redis.zAdd(CLEANUP_LOG_KEY, ...cleanupLogUsers.map(username => ({ member: username, score: addMinutes(new Date(), Math.random() * 60 * 24 * DAYS_BETWEEN_CHECKS).getTime() } as ZMember)));
-        console.log(`OnUpgradeCleanupTasks: Rescheduled records of ${cleanupLogUsers.length} users for future cleanup.`);
-
-        await context.redis.set(redisKey, JSON.stringify(DAYS_BETWEEN_CHECKS));
+    if (newValue !== prev && cleanupUsers.length > 0) {
+        await context.redis.zAdd(
+            CLEANUP_LOG_KEY,
+            ...cleanupUsers.map(username => ({
+                member: username,
+                score: addMinutes(new Date(), Math.random() * 60 * 24 * DAYS_BETWEEN_CHECKS).getTime(),
+            }))
+        );
+        logger.info(`Rescheduled ${cleanupUsers.length} users in cleanup log due to check interval change.`);
+        await context.redis.set(redisKey, newValue);
     }
 
-    // Cancel any ad-hoc jobs and reschedule.
-    const existingJobs = await context.scheduler.listJobs();
-    await Promise.all(existingJobs.filter(job => job.name === ADHOC_CLEANUP_JOB).map(job => context.scheduler.cancelJob(job.id)));
+    const jobs = await context.scheduler.listJobs();
+    const adhocJobs = jobs.filter(job => job.name === ADHOC_CLEANUP_JOB);
+    await Promise.all(adhocJobs.map(job => context.scheduler.cancelJob(job.id)));
+
+    logger.debug(`Cancelled ${adhocJobs.length} existing adhoc cleanup jobs.`);
+
     await scheduleAdhocCleanup(context);
 }
 
-export async function scheduleAdhocCleanup (context: TriggerContext) {
+export async function scheduleAdhocCleanup(context: TriggerContext) {
     const nextEntries = await context.redis.zRange(CLEANUP_LOG_KEY, 0, 0, { by: "rank" });
 
     if (nextEntries.length === 0) {
+        logger.debug("No entries in cleanup log for scheduling adhoc cleanup.");
         return;
     }
 
     const nextCleanupTime = new Date(nextEntries[0].score);
-    const nextCleanupJobTime = addMinutes(nextCleanupTime, 5);
+    const nextAdhocTime = addMinutes(nextCleanupTime, 5);
     const nextScheduledTime = CronExpressionParser.parse(CLEANUP_JOB_CRON).next().toDate();
 
-    if (nextCleanupJobTime < subMinutes(nextScheduledTime, 5)) {
-        // It's worth running an ad-hoc job.
-        console.log(`Cleanup: Next ad-hoc cleanup: ${nextCleanupJobTime.toUTCString()}`);
+    if (nextAdhocTime < subMinutes(nextScheduledTime, 5)) {
+        logger.info("Scheduling adhoc cleanup job.", {
+            runAt: nextAdhocTime.toUTCString(),
+        });
         await context.scheduler.runJob({
             name: ADHOC_CLEANUP_JOB,
-            runAt: nextCleanupJobTime < new Date() ? new Date() : nextCleanupJobTime,
+            runAt: nextAdhocTime < new Date() ? new Date() : nextAdhocTime,
         });
     } else {
-        console.log(`Cleanup: Next entry in cleanup log is after next scheduled run (${nextCleanupTime.toUTCString()}).`);
-        console.log(`Cleanup: Next cleanup job: ${nextScheduledTime.toUTCString()}`);
+        logger.info("Adhoc cleanup not needed. Scheduled cleanup is soon.", {
+            nextCleanupLogTime: nextCleanupTime.toUTCString(),
+            nextScheduledTime: nextScheduledTime.toUTCString(),
+        });
     }
 }

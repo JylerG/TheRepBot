@@ -8,6 +8,7 @@ import { populateCleanupLogAndScheduleCleanup, scheduleAdhocCleanup } from "./cl
 import pluralize from "pluralize";
 import { AppSetting } from "./settings.js";
 import { ADHOC_CLEANUP_JOB } from "./constants.js";
+import { logger } from "./logger.js";
 
 export interface CompactScore {
     u: string;
@@ -19,61 +20,61 @@ const schema: JSONSchemaType<CompactScore[]> = {
     items: {
         type: "object",
         properties: {
-            u: { type: "string", nullable: false },
-            s: { type: "integer", nullable: false },
+            u: { type: "string" },
+            s: { type: "integer" },
         },
         required: ["u", "s"],
         additionalProperties: false,
     },
 };
 
-export function compressScores (value: CompactScore[]): string {
-    return Buffer.from(pako.deflate(JSON.stringify(value))).toString("base64");
+export function compressScores(value: CompactScore[]): string {
+    const compressed = Buffer.from(pako.deflate(JSON.stringify(value))).toString("base64");
+    logger.debug("Scores compressed", { length: compressed.length });
+    return compressed;
 }
 
-export function decompressScores (blob: string): CompactScore[] {
+export function decompressScores(blob: string): CompactScore[] {
     const json = Buffer.from(pako.inflate(Buffer.from(blob, "base64"))).toString();
+    logger.debug("Scores decompressed");
     return JSON.parse(json) as CompactScore[];
 }
 
 const BACKUP_WIKI_PAGE = "therepbot/backup";
 
-export async function backupAllScores (_: MenuItemOnPressEvent, context: Context) {
+export async function backupAllScores(_: MenuItemOnPressEvent, context: Context) {
+    logger.info("Starting backup process...");
+
     const backupEnabled = await context.settings.get<boolean>(AppSetting.EnableBackup);
     if (!backupEnabled) {
+        logger.warn("Backup disabled via settings.");
         context.ui.showToast("Backup function is disabled.");
         return;
     }
 
     const currentScores = await context.redis.zRange(POINTS_STORE_KEY, 0, -1);
     const currentScoreCount = await context.redis.zCard(POINTS_STORE_KEY);
+    logger.info("Fetched current scores", { count: currentScoreCount });
 
     if (currentScores.length === 1000 && currentScoreCount > 1000) {
-        context.ui.showToast("Sorry, due to an issue with the Dev Platform, this app is not currently able do backups for subs with > 1000 scores");
+        logger.error("Score count exceeds backup limit.");
+        context.ui.showToast("Cannot backup >1000 scores at this time.");
         return;
     }
 
-    const compactScores = currentScores.map(score => ({ u: score.member, s: score.score } as CompactScore));
+    const compactScores = currentScores.map(score => ({ u: score.member, s: score.score }));
     const compressed = compressScores(compactScores);
 
     const subredditName = await getSubredditName(context);
-    let wikiPage: WikiPage | undefined;
+    logger.debug("Subreddit name fetched", { subredditName });
+
     try {
-        wikiPage = await context.reddit.getWikiPage(subredditName, BACKUP_WIKI_PAGE);
+        let wikiPage = await context.reddit.getWikiPage(subredditName, BACKUP_WIKI_PAGE);
+        logger.info("Backup wiki page exists, updating...");
+        await context.reddit.updateWikiPage({ subredditName, page: BACKUP_WIKI_PAGE, content: compressed });
     } catch {
-        //
-    }
-
-    const wikiPageOptions = {
-        subredditName,
-        page: BACKUP_WIKI_PAGE,
-        content: compressed,
-    };
-
-    if (wikiPage) {
-        await context.reddit.updateWikiPage(wikiPageOptions);
-    } else {
-        await context.reddit.createWikiPage(wikiPageOptions);
+        logger.info("Backup wiki page does not exist, creating...");
+        await context.reddit.createWikiPage({ subredditName, page: BACKUP_WIKI_PAGE, content: compressed });
         await context.reddit.updateWikiPageSettings({
             subredditName,
             page: BACKUP_WIKI_PAGE,
@@ -82,25 +83,30 @@ export async function backupAllScores (_: MenuItemOnPressEvent, context: Context
         });
     }
 
+    logger.info("Backup completed and saved.");
     context.ui.showToast({
         text: "TheRepBot points have been backed up to the wiki",
         appearance: "success",
     });
 }
 
-export async function showRestoreForm (_: MenuItemOnPressEvent, context: Context) {
+export async function showRestoreForm(_: MenuItemOnPressEvent, context: Context) {
+    logger.info("Restore form requested...");
+
     const restoreEnabled = await context.settings.get<boolean>(AppSetting.EnableRestore);
     if (!restoreEnabled) {
+        logger.warn("Restore disabled via settings.");
         context.ui.showToast("Restore function is disabled in Settings.");
         return;
     }
 
     const subredditName = await getSubredditName(context);
     let wikiPage: WikiPage | undefined;
+
     try {
         wikiPage = await context.reddit.getWikiPage(subredditName, BACKUP_WIKI_PAGE);
     } catch {
-        //
+        logger.warn("No backup wiki page found.");
     }
 
     if (!wikiPage) {
@@ -111,15 +117,18 @@ export async function showRestoreForm (_: MenuItemOnPressEvent, context: Context
     context.ui.showForm(restoreFormKey);
 }
 
-export async function restoreFormHandler (event: FormOnSubmitEvent<JSONObject>, context: Context) {
+export async function restoreFormHandler(event: FormOnSubmitEvent<JSONObject>, context: Context) {
+    logger.info("Restore form submitted");
+
     const chosenAction = (event.values.action as string[])[0];
+    logger.debug("Restore action selected", { action: chosenAction });
 
     const subredditName = await getSubredditName(context);
     let wikiPage: WikiPage | undefined;
+
     try {
         wikiPage = await context.reddit.getWikiPage(subredditName, BACKUP_WIKI_PAGE);
     } catch {
-        // Should be impossible, we validated before.
         context.ui.showToast("There are no backups to restore");
         return;
     }
@@ -128,7 +137,7 @@ export async function restoreFormHandler (event: FormOnSubmitEvent<JSONObject>, 
     try {
         scores = decompressScores(wikiPage.content);
     } catch (error) {
-        console.log(error);
+        await logger.error("Error decoding backup", { error }, context);
         context.ui.showToast("Sorry, the backup could not be decoded.");
         return;
     }
@@ -136,25 +145,26 @@ export async function restoreFormHandler (event: FormOnSubmitEvent<JSONObject>, 
     const ajv = new Ajv.default();
     const validate = ajv.compile(schema);
     if (!validate(scores)) {
-        console.log(ajv.errorsText(validate.errors));
+        logger.error("Invalid backup format", { errors: ajv.errorsText(validate.errors) });
         context.ui.showToast("Sorry, the backup is in an invalid format.");
         return;
     }
 
     const existingScores = await context.redis.zRange(POINTS_STORE_KEY, 0, -1);
 
-    // Grab scores that do not yet exist in Redis.
-    const scoresToAdd = scores.filter(score => score.u && score.s > 0 && !existingScores.some(existingItem => existingItem.member === score.u));
-    if (chosenAction === "overwrite") {
-        scoresToAdd.push(...scores.filter(score => score.u && score.s > 0 && backupScoreIsHigher(score, existingScores)));
-    }
+    const scoresToAdd = scores.filter(score => {
+        const exists = existingScores.find(item => item.member === score.u);
+        return score.s > 0 && (!exists || (chosenAction === "overwrite" && score.s > exists.score));
+    });
 
     if (!scoresToAdd.length) {
+        logger.info("No scores eligible for restore.");
         context.ui.showToast("No scores could be imported with the chosen settings.");
         return;
     }
 
-    await context.redis.zAdd(POINTS_STORE_KEY, ...scoresToAdd.map(score => ({ member: score.u, score: score.s } as ZMember)));
+    logger.info("Adding restored scores", { count: scoresToAdd.length });
+    await context.redis.zAdd(POINTS_STORE_KEY, ...scoresToAdd.map(score => ({ member: score.u, score: score.s })));
 
     await populateCleanupLogAndScheduleCleanup(context);
 
@@ -164,23 +174,14 @@ export async function restoreFormHandler (event: FormOnSubmitEvent<JSONObject>, 
         data: { reason: "Imported data from backup" },
     });
 
-    context.ui.showToast(`Successfully imported ${scoresToAdd.length} ${pluralize("score", scoresToAdd.length)}.`);
-
-    // Remove "Install Date" redis key, because we can now assume that historical data is populated.
     await context.redis.del("InstallDate");
 
-    // Cancel any ad-hoc jobs and reschedule.
     const existingJobs = await context.scheduler.listJobs();
     await Promise.all(existingJobs.filter(job => job.name === ADHOC_CLEANUP_JOB).map(job => context.scheduler.cancelJob(job.id)));
     await scheduleAdhocCleanup(context);
-}
 
-function backupScoreIsHigher (backupScore: CompactScore, existingScores: ZMember[]): boolean {
-    const existingScore = existingScores.find(item => item.member === backupScore.u);
-    if (!existingScore) {
-        return false;
-    }
-    return backupScore.s > existingScore.score;
+    context.ui.showToast(`Successfully imported ${scoresToAdd.length} ${pluralize("score", scoresToAdd.length)}.`);
+    logger.info("Restore completed successfully.");
 }
 
 export const restoreForm: Form = {
@@ -191,7 +192,7 @@ export const restoreForm: Form = {
             label: "Existing Score Handling",
             type: "select",
             options: [
-                { label: "Overwrite a user's score if backup has a higher value than the database", value: "overwrite" },
+                { label: "Overwrite a user's score if backup has a higher value", value: "overwrite" },
                 { label: "Skip restore if user already has a score", value: "skip" },
             ],
             multiSelect: false,

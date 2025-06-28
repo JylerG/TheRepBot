@@ -35,17 +35,20 @@ Data for users is removed from the app within 48 hours from v1.3 onwards.
 
 ## Acknowledgements
 
-[Code edited from u/fsv's TheRepBot](https://github.com/fsvreddit/reputatorbot).
+[Code edited from u/fsv's reputatorbot](https://github.com/fsvreddit/reputatorbot).
 
 ## About
 
 This app is open source and licenced under the BSD 3-Clause Licence. You can find the source code on GitHub [here](https://github.com/JylerG/TheRepBot).
 
 ## Version History
-
-### v0.0.6
+### 0.0.7
+* Fixed a typo in v0.0.6 (used TheRepBot instead of reputatorbot in acknowledgements)
+### 0.0.6
 * Kept bits of code from TheRepBot while implementing custom code
 * Set up a baseline for what should be used
+* Implemented daily, weekly, monthly, yearly, and alltime leaderboards
+* Made code work as intended as much as possible
 * Note that this bot's source code has changed since this README/project was first created and is why these notes may seem weird with what the code shows
 ### 0.0.5
 * Add more customizability to various messages

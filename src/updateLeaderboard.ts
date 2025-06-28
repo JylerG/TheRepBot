@@ -2,8 +2,8 @@ import { TriggerContext } from "@devvit/public-api";
 import { format } from "date-fns";
 import { AppSetting } from "./settings.js";
 
-const TIMEFRAMES = ["daily", "weekly", "monthly", "yearly", "alltime"] as const;
-const MAX_LEADERBOARD_ENTRIES = 25;
+const TimeFrames = ["daily", "weekly", "monthly", "yearly", "alltime"] as const;
+const MaxLeaderBoardEntries = 25;
 
 function leaderboardKey(timeframe: string): string {
     return timeframe === "alltime" ? "thanksPointsStore" : `thanksPointsStore:${timeframe}`;
@@ -11,10 +11,10 @@ function leaderboardKey(timeframe: string): string {
 
 function expirationSeconds(timeframe: string): number | undefined {
     switch (timeframe) {
-        case "daily": return 60 * 60 * 48; // 2 days
-        case "weekly": return 60 * 60 * 24 * 10; // 10 days
-        case "monthly": return 60 * 60 * 24 * 40; // 40 days
-        case "yearly": return 60 * 60 * 24 * 400; // 400 days
+        case "daily": return 60 * 60 * 24; // 1 day
+        case "weekly": return 60 * 60 * 24 * 7; // 7 days
+        case "monthly": return 60 * 60 * 24 * 30; // 30 days
+        case "yearly": return 60 * 60 * 24 * 365; // 365 days
         default: return undefined;
     }
 }
@@ -26,14 +26,16 @@ export async function updateLeaderboard(context: TriggerContext): Promise<void> 
     const pointSymbol = settings[AppSetting.PointSymbol] as string ?? "";
     const leaderboardWiki = settings[AppSetting.LeaderboardWikiPage] as string ?? "leaderboard";
 
+    const leaderboardSize = Number(settings[AppSetting.LeaderboardSize]) || MaxLeaderBoardEntries;
+
     const now = new Date();
     const formattedDate = format(now, "yyyy-MM-dd HH:mm:ss");
 
-    let markdown = `# Leaderboards\n_Last updated: ${formattedDate}_\n`;
+    let markdown = `# Leaderboards\nLast updated: ${formattedDate} UTC\n`;
 
-    for (const timeframe of TIMEFRAMES) {
+    for (const timeframe of TimeFrames) {
         const redisKey = leaderboardKey(timeframe);
-        const scores = await context.redis.zRange(redisKey, 0, Number(settings[AppSetting.LeaderboardSize]) - 1);
+        const scores = await context.redis.zRange(redisKey, 0, leaderboardSize - 1);
 
         if (!scores.length) continue;
 
@@ -47,11 +49,18 @@ export async function updateLeaderboard(context: TriggerContext): Promise<void> 
             const userPageLink = `/r/${subredditName}/wiki/user/${encodeURIComponent(username)}`;
             markdown += `\n| ${i + 1} | [${displayName}](${userPageLink}) | ${score}${pointSymbol} |`;
         }
+
+        // Apply expiration if applicable
+        const expiry = expirationSeconds(timeframe);
+        if (expiry) {
+            await context.redis.expire(redisKey, expiry);
+        }
     }
 
     if (!subredditName) {
         throw new Error("subredditName is undefined.");
     }
+
     await context.reddit.updateWikiPage({
         subredditName,
         page: leaderboardWiki,
