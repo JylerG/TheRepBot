@@ -336,127 +336,123 @@ export async function handleThanksEvent(
     }
 
     // Users who can't award points
-const blockedAwardersRaw = settings[AppSetting.UsersWhoCannotAwardPoints];
-const blockedAwarders =
-    typeof blockedAwardersRaw === "string" && blockedAwardersRaw.length > 0
-        ? blockedAwardersRaw.split(",").map((u) => u.trim().toLowerCase())
-        : [];
+    const blockedAwardersRaw = settings[AppSetting.UsersWhoCannotAwardPoints];
+    const blockedAwarders =
+        typeof blockedAwardersRaw === "string" && blockedAwardersRaw.length > 0
+            ? blockedAwardersRaw.split(",").map((u) => u.trim().toLowerCase())
+            : [];
 
-if (blockedAwarders.includes(event.author.name.toLowerCase())) {
-    logger.info(
-        `${event.comment.id}: ${event.author.name} is not permitted to award points.`
-    );
-
-    const notifyRaw = settings[AppSetting.NotifyOnError];
-    const notify =
-        typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
-            ? (notifyRaw as ReplyOptions)
-            : ReplyOptions.NoReply;
-
-    if (notify !== ReplyOptions.NoReply) {
-        const messageRaw = settings[AppSetting.UsersWhoCannotAwardPointsMessage];
-        const message =
-            typeof messageRaw === "string"
-                ? messageRaw
-                : "You do not have permission to award points.";
-
-        await replyToUser(
-            context,
-            notify,
-            event.author.name,
-            message,
-            event.comment.id
+    if (blockedAwarders.includes(event.author.name.toLowerCase())) {
+        logger.info(
+            `${event.comment.id}: ${event.author.name} is not permitted to award points.`
         );
-    }
-    return;
-}
 
+        const notifyRaw = settings[AppSetting.NotifyOnError];
+        const notify =
+            typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
+                ? (notifyRaw as ReplyOptions)
+                : ReplyOptions.NoReply;
+
+        if (notify !== ReplyOptions.NoReply) {
+            const messageRaw = settings[AppSetting.UsersWhoCannotAwardPointsMessage];
+            const message =
+                typeof messageRaw === "string"
+                    ? messageRaw
+                    : "You do not have permission to award points.";
+
+            await replyToUser(
+                context,
+                notify,
+                event.author.name,
+                message,
+                event.comment.id
+            );
+        }
+        return;
+    }
 
     const parentComment = await context.reddit.getCommentById(
         event.comment.parentId
     );
 
     if (!parentComment || parentComment.authorName === event.author.name) {
-    logger.info(`${event.comment.id}: Self-award or invalid parent comment.`);
+        logger.info(`${event.comment.id}: Self-award or invalid parent comment.`);
 
-    const notifyRaw = settings[AppSetting.NotifyOnError];
-    const notify =
-        typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
-            ? (notifyRaw as ReplyOptions)
-            : ReplyOptions.NoReply;
+        const notifyRaw = settings[AppSetting.NotifyOnError];
+        const notify =
+            typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
+                ? (notifyRaw as ReplyOptions)
+                : ReplyOptions.NoReply;
 
-    if (notify !== ReplyOptions.NoReply) {
-        const msgRaw = settings[AppSetting.SelfAwardMessage];
-        const msg = typeof msgRaw === "string" ? msgRaw : "You can't award yourself a {{name}}.";
+        if (notify !== ReplyOptions.NoReply) {
+            const msgRaw = settings[AppSetting.SelfAwardMessage];
+            const msg = typeof msgRaw === "string" ? msgRaw : "You can't award yourself a {{name}}.";
 
-        const pointNameRaw = settings[AppSetting.PointName];
-        const pointName = typeof pointNameRaw === "string" ? pointNameRaw : "point";
+            const pointNameRaw = settings[AppSetting.PointName];
+            const pointName = typeof pointNameRaw === "string" ? pointNameRaw : "point";
 
-        const message = replaceAll(msg, "{{name}}", markdownEscape(pointName));
+            const message = replaceAll(msg, "{{name}}", markdownEscape(pointName));
 
-        await replyToUser(context, notify, event.author.name, message, event.comment.id);
+            await replyToUser(context, notify, event.author.name, message, event.comment.id);
+        }
+        return;
     }
-    return;
-}
-
 
     if (["AutoModerator", context.appName].includes(parentComment.authorName)) {
-    logger.info(`${event.comment.id}: Can't award points to bot user.`);
+        logger.info(`${event.comment.id}: Can't award points to bot user.`);
 
-    // Get notify option and safely cast to ReplyOptions enum or default
-    const notifyRaw = settings[AppSetting.NotifyOnError];
-    const notify =
-        typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
-            ? (notifyRaw as ReplyOptions)
-            : ReplyOptions.NoReply;
+        // Get notify option and safely cast to ReplyOptions enum or default
+        const notifyRaw = settings[AppSetting.NotifyOnError];
+        const notify =
+            typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
+                ? (notifyRaw as ReplyOptions)
+                : ReplyOptions.NoReply;
 
-    if (notify !== ReplyOptions.NoReply) {
-        const messageRaw = settings[AppSetting.BotAwardMessage];
-        const message =
-            typeof messageRaw === "string"
-                ? messageRaw
-                : "You can't award the bot a {{name}}.";
+        if (notify !== ReplyOptions.NoReply) {
+            const messageRaw = settings[AppSetting.BotAwardMessage];
+            const message =
+                typeof messageRaw === "string"
+                    ? messageRaw
+                    : "You can't award the bot a {{name}}.";
 
-        await replyToUser(context, notify, event.author.name, message, event.comment.id);
+            await replyToUser(context, notify, event.author.name, message, event.comment.id);
+        }
+
+        return;
     }
 
-    return;
-}
-
-
     const excludedUsersRaw = settings[AppSetting.UsersWhoCannotBeAwardedPoints];
-const excludedUsers = 
-  typeof excludedUsersRaw === "string"
-    ? excludedUsersRaw.split(",").map((u) => u.trim().toLowerCase())
-    : [];
+    const excludedUsers = 
+        typeof excludedUsersRaw === "string"
+        ? excludedUsersRaw.split(",").map((u) => u.trim().toLowerCase())
+        : [];
 
-if (excludedUsers.includes(parentComment.authorName.toLowerCase())) {
-  logger.info(`${event.comment.id}: ${parentComment.authorName} is on the exclusion list.`);
+    if (excludedUsers.includes(parentComment.authorName.toLowerCase())) {
+        logger.info(`${event.comment.id}: ${parentComment.authorName} is on the exclusion list.`);
 
-  const notifyRaw = settings[AppSetting.NotifyOnError];
-  const notify =
-    typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
-      ? (notifyRaw as ReplyOptions)
-      : ReplyOptions.NoReply;
+        const notifyRaw = settings[AppSetting.NotifyOnError];
+        const notify =
+            typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
+                ? (notifyRaw as ReplyOptions)
+                : ReplyOptions.NoReply;
 
-  if (notify !== ReplyOptions.NoReply) {
-    let messageRaw = settings[AppSetting.UsersWhoCannotBeAwardedPointsMessage];
-    const message =
-      typeof messageRaw === "string"
-        ? messageRaw
-        : "Sorry, you cannot award points to {{awardee}} as they are excluded from receiving points.";
+        if (notify !== ReplyOptions.NoReply) {
+            let messageRaw = settings[AppSetting.UsersWhoCannotBeAwardedPointsMessage];
+            const message =
+                typeof messageRaw === "string"
+                ? messageRaw
+                : "Sorry, you cannot award points to {{awardee}} as they are excluded from receiving points.";
 
-    const replacedMessage = replaceAll(
-      message,
-      "{{awardee}}",
-      markdownEscape(parentComment.authorName)
-    );
+            const replacedMessage = replaceAll(
+                message,
+                "{{awardee}}",
+                markdownEscape(parentComment.authorName)
+            );
 
-    await replyToUser(context, notify, event.author.name, replacedMessage, event.comment.id);
-  }
-  return;
-}
-
+            await replyToUser(context, notify, event.author.name, replacedMessage, event.comment.id);
+        }
+        return;
+    }
 
     // Prevent double-awards
     const redisKey = `thanks-${parentComment.id}-${event.author.name}`;
@@ -679,21 +675,14 @@ export async function updateLeaderboard(
         markdown += `*See [how the ${pointName}s system works](https://www.reddit.com/r/${subredditName}/wiki/${helpPage})*\n\n`;
     }
 
-    // Fetch the top scores from Redis for all time (main) leaderboard
-    // We'll do the all-time leaderboard first, then add time-limited boards below
-
-    // Get top members descending by score
-    // Redis zrevrange gives us descending sorted by score
-
     async function getTopScores(key: string, leaderboardSize: number) {
-        // Get members from highest to lowest score
         const zRangeResults = await context.redis.zRange(
             key,
             0,
             leaderboardSize - 1,
             {
                 reverse: true,
-                by: "rank", // or 'score' depending on your use case
+                by: "rank",
                 limit: {
                     offset: 0,
                     count: leaderboardSize,
@@ -706,10 +695,9 @@ export async function updateLeaderboard(
             entries.push({ member: result.member, score: result.score });
         }
 
-        return entries; // array of { member, score } sorted from highest to lowest
+        return entries;
     }
 
-    // Helper: format a single leaderboard section
     function formatLeaderboardSection(
         title: string,
         entries: { member: string; score: number }[]
@@ -726,7 +714,6 @@ export async function updateLeaderboard(
         return text;
     }
 
-    // Get all-time leaderboard
     const allTimeEntries = await getTopScores(
         leaderboardKey("alltime"),
         leaderboardSize
@@ -736,29 +723,30 @@ export async function updateLeaderboard(
         allTimeEntries
     );
 
-    // Optional: generate daily, weekly, monthly, yearly leaderboards if enabled
     const dailyEntries = await getTopScores(
         leaderboardKey("daily"),
         leaderboardSize
     );
     markdown += formatLeaderboardSection("Daily Leaderboard", dailyEntries);
+
     const weeklyEntries = await getTopScores(
         leaderboardKey("weekly"),
         leaderboardSize
     );
     markdown += formatLeaderboardSection("Weekly Leaderboard", weeklyEntries);
+
     const monthlyEntries = await getTopScores(
         leaderboardKey("monthly"),
         leaderboardSize
     );
     markdown += formatLeaderboardSection("Monthly Leaderboard", monthlyEntries);
+
     const yearlyEntries = await getTopScores(
         leaderboardKey("yearly"),
         leaderboardSize
     );
     markdown += formatLeaderboardSection("Yearly Leaderboard", yearlyEntries);
 
-    // Save the compiled leaderboard markdown to the configured wiki page
     try {
         await context.reddit.updateWikiPage({
             subredditName,
@@ -850,3 +838,4 @@ export async function manualSetPointsFormHandler(
 
     context.ui.showToast(`Score for ${comment.authorName} is now ${newScore}`);
 }
+
