@@ -1,31 +1,13 @@
-import {
-    Context,
-    FormOnSubmitEvent,
-    JSONObject,
-    MenuItemOnPressEvent,
-    SettingsValues,
-    TriggerContext,
-    User,
-    ScheduledJobEvent,
-    WikiPage,
-    WikiPagePermissionLevel,
-    Comment,
-} from "@devvit/public-api";
-import { manualSetPointsForm } from "./main.js";
+import { Context, FormOnSubmitEvent, JSONObject, MenuItemOnPressEvent, ScheduledJobEvent, SettingsValues, TriggerContext, User } from "@devvit/public-api";
 import { CommentSubmit, CommentUpdate } from "@devvit/protos";
 import { getSubredditName, isModerator, replaceAll } from "./utility.js";
-import { addWeeks } from "date-fns";
-import {
-    ExistingFlairOverwriteHandling,
-    ReplyOptions,
-    TemplateDefaults,
-    AppSetting,
-    LeaderboardMode,
-} from "./settings.js";
+import { addWeeks, format } from "date-fns";
+import { ExistingFlairOverwriteHandling, ReplyOptions, TemplateDefaults, AppSetting } from "./settings.js";
 import markdownEscape from "markdown-escape";
 import { setCleanupForUsers } from "./cleanupTasks.js";
 import { isLinkId } from "@devvit/shared-types/tid.js";
-import { format } from "date-fns";
+import { manualSetPointsForm } from "./main.js";
+import { LeaderboardMode } from "./settings.js";
 import { logger } from "./logger.js"; // Assuming you have a logger module
 
 export const POINTS_STORE_KEY = "thanksPointsStore";
