@@ -75,7 +75,7 @@ Devvit.addSchedulerJob({
 });
 
 Devvit.addMenuItem({
-    label: "Backup TherepBot Scores",
+    label: "Backup TheRepBot Scores",
     forUserType: "moderator",
     location: "subreddit",
     onPress: async (event, context) => {
@@ -85,7 +85,7 @@ Devvit.addMenuItem({
 });
 
 Devvit.addMenuItem({
-    label: "Restore TherepBot Scores",
+    label: "Restore TheRepBot Scores",
     forUserType: "moderator",
     location: "subreddit",
     onPress: async (event, context) => {

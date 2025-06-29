@@ -9,6 +9,7 @@ import {
     ScheduledJobEvent,
     WikiPage,
     WikiPagePermissionLevel,
+    Comment,
 } from "@devvit/public-api";
 import { manualSetPointsForm } from "./main.js";
 import { CommentSubmit, CommentUpdate } from "@devvit/protos";
@@ -40,50 +41,6 @@ function formatMessage(
         result = result.replace(regex, value);
     }
     return result;
-}
-
-async function replyToUser(
-    context: TriggerContext,
-    replyMode: ReplyOptions,
-    toUserName: string,
-    messageBody: string,
-    commentId: string
-) {
-    if (replyMode === ReplyOptions.NoReply) return;
-
-    if (replyMode === ReplyOptions.ReplyByPM) {
-        const subredditName = await getSubredditName(context);
-        try {
-            await context.reddit.sendPrivateMessage({
-                subject: `Message from TheRepBot on ${subredditName}`,
-                text: messageBody,
-                to: toUserName,
-            });
-            logger.info(`${commentId}: PM sent to ${toUserName}.`);
-        } catch {
-            logger.warn(
-                `${commentId}: Error sending PM notification to ${toUserName}. User may only allow PMs from whitelisted users.`
-            );
-        }
-    } else if (replyMode === ReplyOptions.ReplyAsComment) {
-        // Reply by comment
-        const newComment = await context.reddit.submitComment({
-            id: commentId,
-            text: messageBody,
-        });
-        logger.info(
-            `${commentId}: Public comment reply left in reply to ${toUserName}`
-        );
-
-        // Notify in chat (e.g., log or a UI notification)
-        // Here I add a logger.info as a chat notification example:
-        logger.info(
-            `Notification: User ${toUserName} was notified with a public comment reply.`
-        );
-
-        // If you have a chat or UI context where you want to send an immediate notification,
-        // you can also invoke that here.
-    }
 }
 
 async function getCurrentScore(
@@ -241,6 +198,26 @@ export async function handleThanksEvent(
     event: CommentSubmit | CommentUpdate,
     context: TriggerContext
 ) {
+
+    // Step 1: Filter message-related settings
+const messageEntries = Object.entries(AppSetting).filter(([key]) =>
+    key.toLowerCase().includes("message")
+);
+
+// Step 2: Build a logger object with readable camelCase keys
+const messageLogger: Record<string, string> = {};
+for (const [key, value] of messageEntries) {
+    const camelCaseKey =
+        key.charAt(0).toLowerCase() + key.slice(1); // simple camelCase transform
+    messageLogger[camelCaseKey] = value;
+}
+
+// Step 3: Log all the message settings
+console.log("📬 Loaded AppSetting messages into logger:\n");
+for (const [key, value] of Object.entries(messageLogger)) {
+    console.log(`${key}: "${value}"`);
+}
+
     if (!event.comment || !event.post || !event.author || !event.subreddit)
         return;
 
@@ -256,8 +233,7 @@ export async function handleThanksEvent(
         | string
         | undefined;
     const userCommandList =
-        userCommandVal?.split("\n").map((cmd) => cmd.toLowerCase().trim()) ??
-        [];
+        userCommandVal?.split("\n").map((cmd) => cmd.toLowerCase().trim()) ?? [];
     const modCommand = settings[AppSetting.ModAwardCommand] as
         | string
         | undefined;
@@ -271,8 +247,10 @@ export async function handleThanksEvent(
             event.comment ? regex.test(event.comment.body) : false
         );
     } else {
-        containsUserCommand = userCommandList.some((command) =>
-            event.comment && event.comment.body.toLowerCase().includes(command)
+        containsUserCommand = userCommandList.some(
+            (command) =>
+                event.comment &&
+                event.comment.body.toLowerCase().includes(command)
         );
     }
 
@@ -348,24 +326,37 @@ export async function handleThanksEvent(
         );
 
         const notifyRaw = settings[AppSetting.NotifyOnError];
-        const notify =
-            typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
+        const replyMode =
+            typeof notifyRaw === "string" &&
+            Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
                 ? (notifyRaw as ReplyOptions)
                 : ReplyOptions.NoReply;
+        if (replyMode === ReplyOptions.NoReply) return;
 
-        if (notify !== ReplyOptions.NoReply) {
-            const messageRaw = settings[AppSetting.UsersWhoCannotAwardPointsMessage];
-            const message =
-                typeof messageRaw === "string"
-                    ? messageRaw
-                    : "You do not have permission to award points.";
-
-            await replyToUser(
-                context,
-                notify,
-                event.author.name,
-                message,
-                event.comment.id
+        if (replyMode === ReplyOptions.ReplyByPM) {
+            const subredditName = await getSubredditName(context);
+            try {
+                await context.reddit.sendPrivateMessage({
+                    subject: `Message from TheRepBot on ${subredditName}`,
+                    text: settings[AppSetting.UsersWhoCannotAwardPointsMessage] as string,
+                    to: event.author.name,
+                });
+                logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
+            } catch {
+                logger.warn(
+                    `${event.comment.id}: Error sending PM notification to ${event.author.name}. User may only allow PMs from whitelisted users.`
+                );
+            }
+        } else if (replyMode === ReplyOptions.ReplyAsComment) {
+            await context.reddit.submitComment({
+                id: event.comment.id,
+                text: settings[AppSetting.UsersWhoCannotAwardPointsMessage] as string,
+            });
+            logger.info(
+                `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
+            );
+            logger.info(
+                `Notification: User ${event.author.name} was notified with a public comment reply.`
             );
         }
         return;
@@ -376,24 +367,57 @@ export async function handleThanksEvent(
     );
 
     if (!parentComment || parentComment.authorName === event.author.name) {
-        logger.info(`${event.comment.id}: Self-award or invalid parent comment.`);
+        logger.info(
+            `${event.comment.id}: Self-award or invalid parent comment.`
+        );
 
         const notifyRaw = settings[AppSetting.NotifyOnError];
         const notify =
-            typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
+            typeof notifyRaw === "string" &&
+            Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
                 ? (notifyRaw as ReplyOptions)
                 : ReplyOptions.NoReply;
 
         if (notify !== ReplyOptions.NoReply) {
             const msgRaw = settings[AppSetting.SelfAwardMessage];
-            const msg = typeof msgRaw === "string" ? msgRaw : "You can't award yourself a {{name}}.";
+            const msg =
+                typeof msgRaw === "string"
+                    ? msgRaw
+                    : "You can't award yourself a {{name}}.";
 
             const pointNameRaw = settings[AppSetting.PointName];
-            const pointName = typeof pointNameRaw === "string" ? pointNameRaw : "point";
+            const pointName =
+                typeof pointNameRaw === "string" ? pointNameRaw : "point";
 
-            const message = replaceAll(msg, "{{name}}", markdownEscape(pointName));
+            const message = replaceAll(
+                msg,
+                "{{name}}",
+                markdownEscape(pointName)
+            );
 
-            await replyToUser(context, notify, event.author.name, message, event.comment.id);
+            if (notify === ReplyOptions.ReplyByPM) {
+                const subredditName = await getSubredditName(context);
+                try {
+                    await context.reddit.sendPrivateMessage({
+                        subject: `Message from TheRepBot on ${subredditName}`,
+                        text: message,
+                        to: event.author.name,
+                    });
+                    logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
+                } catch {
+                    logger.warn(
+                        `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
+                    );
+                }
+            } else if (notify === ReplyOptions.ReplyAsComment) {
+                await context.reddit.submitComment({
+                    id: event.comment.id,
+                    text: message,
+                });
+                logger.info(
+                    `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
+                );
+            }
         }
         return;
     }
@@ -401,10 +425,10 @@ export async function handleThanksEvent(
     if (["AutoModerator", context.appName].includes(parentComment.authorName)) {
         logger.info(`${event.comment.id}: Can't award points to bot user.`);
 
-        // Get notify option and safely cast to ReplyOptions enum or default
         const notifyRaw = settings[AppSetting.NotifyOnError];
         const notify =
-            typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
+            typeof notifyRaw === "string" &&
+            Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
                 ? (notifyRaw as ReplyOptions)
                 : ReplyOptions.NoReply;
 
@@ -415,33 +439,59 @@ export async function handleThanksEvent(
                     ? messageRaw
                     : "You can't award the bot a {{name}}.";
 
-            await replyToUser(context, notify, event.author.name, message, event.comment.id);
+            if (notify === ReplyOptions.ReplyByPM) {
+                const subredditName = await getSubredditName(context);
+                try {
+                    await context.reddit.sendPrivateMessage({
+                        subject: `Message from TheRepBot on ${subredditName}`,
+                        text: message,
+                        to: event.author.name,
+                    });
+                    logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
+                } catch {
+                    logger.warn(
+                        `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
+                    );
+                }
+            } else if (notify === ReplyOptions.ReplyAsComment) {
+                await context.reddit.submitComment({
+                    id: event.comment.id,
+                    text: message,
+                });
+                logger.info(
+                    `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
+                );
+            }
         }
 
         return;
     }
 
     const excludedUsersRaw = settings[AppSetting.UsersWhoCannotBeAwardedPoints];
-    const excludedUsers = 
+    const excludedUsers =
         typeof excludedUsersRaw === "string"
-        ? excludedUsersRaw.split(",").map((u) => u.trim().toLowerCase())
-        : [];
+            ? excludedUsersRaw.split(",").map((u) => u.trim().toLowerCase())
+            : [];
 
     if (excludedUsers.includes(parentComment.authorName.toLowerCase())) {
-        logger.info(`${event.comment.id}: ${parentComment.authorName} is on the exclusion list.`);
+        logger.info(
+            `${event.comment.id}: ${parentComment.authorName} is on the exclusion list.`
+        );
 
         const notifyRaw = settings[AppSetting.NotifyOnError];
         const notify =
-            typeof notifyRaw === "string" && Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
+            typeof notifyRaw === "string" &&
+            Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
                 ? (notifyRaw as ReplyOptions)
                 : ReplyOptions.NoReply;
 
         if (notify !== ReplyOptions.NoReply) {
-            let messageRaw = settings[AppSetting.UsersWhoCannotBeAwardedPointsMessage];
+            let messageRaw =
+                settings[AppSetting.UsersWhoCannotBeAwardedPointsMessage];
             const message =
                 typeof messageRaw === "string"
-                ? messageRaw
-                : "Sorry, you cannot award points to {{awardee}} as they are excluded from receiving points.";
+                    ? messageRaw
+                    : "Sorry, you cannot award points to {{awardee}} as they are excluded from receiving points.";
 
             const replacedMessage = replaceAll(
                 message,
@@ -449,7 +499,29 @@ export async function handleThanksEvent(
                 markdownEscape(parentComment.authorName)
             );
 
-            await replyToUser(context, notify, event.author.name, replacedMessage, event.comment.id);
+            if (notify === ReplyOptions.ReplyByPM) {
+                const subredditName = await getSubredditName(context);
+                try {
+                    await context.reddit.sendPrivateMessage({
+                        subject: `Message from TheRepBot on ${subredditName}`,
+                        text: replacedMessage,
+                        to: event.author.name,
+                    });
+                    logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
+                } catch {
+                    logger.warn(
+                        `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
+                    );
+                }
+            } else if (notify === ReplyOptions.ReplyAsComment) {
+                await context.reddit.submitComment({
+                    id: event.comment.id,
+                    text: replacedMessage,
+                });
+                logger.info(
+                    `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
+                );
+            }
         }
         return;
     }
@@ -461,8 +533,7 @@ export async function handleThanksEvent(
     if (alreadyThanked) {
         logger.info(`${event.comment.id}: Already awarded.`);
 
-        // Get notify option safely as ReplyOptions enum
-        let notifyRaw = settings[AppSetting.NotifyOnError];
+        const notifyRaw = settings[AppSetting.NotifyOnError];
         const notify =
             typeof notifyRaw === "string" &&
             Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
@@ -481,13 +552,29 @@ export async function handleThanksEvent(
                 name: String(settings[AppSetting.PointName] ?? "point"),
             });
 
-            await replyToUser(
-                context,
-                notify,
-                event.author.name,
-                formattedMessage,
-                event.comment.id
-            );
+            if (notify === ReplyOptions.ReplyByPM) {
+                const subredditName = await getSubredditName(context);
+                try {
+                    await context.reddit.sendPrivateMessage({
+                        subject: `Message from TheRepBot on ${subredditName}`,
+                        text: formattedMessage,
+                        to: event.author.name,
+                    });
+                    logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
+                } catch {
+                    logger.warn(
+                        `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
+                    );
+                }
+            } else if (notify === ReplyOptions.ReplyAsComment) {
+                await context.reddit.submitComment({
+                    id: event.comment.id,
+                    text: formattedMessage,
+                });
+                logger.info(
+                    `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
+                );
+            }
         }
         return;
     }
@@ -560,13 +647,30 @@ export async function handleThanksEvent(
             settings[AppSetting.SuccessMessage] ??
                 "+1 {{name}} awarded to u/{{awardee}} by u/{{awarder}}. Total: {{total}}{{symbol}}. Scoreboard is located [here]({{scoreboard}})"
         );
-        await replyToUser(
-            context,
-            notify,
-            event.author.name,
-            message,
-            event.comment.id
-        );
+
+        if (notify === ReplyOptions.ReplyByPM) {
+            const subredditName = await getSubredditName(context);
+            try {
+                await context.reddit.sendPrivateMessage({
+                    subject: `Message from TheRepBot on ${subredditName}`,
+                    text: message,
+                    to: event.author.name,
+                });
+                logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
+            } catch {
+                logger.warn(
+                    `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
+                );
+            }
+        } else if (notify === ReplyOptions.ReplyAsComment) {
+            await context.reddit.submitComment({
+                id: event.comment.id,
+                text: message,
+            });
+            logger.info(
+                `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
+            );
+        }
     }
 
     // ⬇️ Trigger leaderboard update immediately after awarding a point
@@ -838,4 +942,3 @@ export async function manualSetPointsFormHandler(
 
     context.ui.showToast(`Score for ${comment.authorName} is now ${newScore}`);
 }
-
