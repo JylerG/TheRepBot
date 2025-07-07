@@ -42,6 +42,10 @@ Data for users is removed from the app within 48 hours from v1.3 onwards.
 This app is open source and licenced under the BSD 3-Clause Licence. You can find the source code on GitHub [here](https://github.com/JylerG/TheRepBot).
 
 ## Version History
+### 0.0.8
+* Make it so the bot can actually send the user messages
+* Improve code for functionality
+* Bot can be awarded by users (Need to remove this capability)
 ### 0.0.7
 * Fixed a typo in v0.0.6 (used TheRepBot instead of reputatorbot in acknowledgements)
 ### 0.0.6
