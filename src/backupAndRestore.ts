@@ -30,34 +30,28 @@ const schema: JSONSchemaType<CompactScore[]> = {
 
 export function compressScores(value: CompactScore[]): string {
     const compressed = Buffer.from(pako.deflate(JSON.stringify(value))).toString("base64");
-    logger.debug("Scores compressed", { length: compressed.length });
     return compressed;
 }
 
 export function decompressScores(blob: string): CompactScore[] {
     const json = Buffer.from(pako.inflate(Buffer.from(blob, "base64"))).toString();
-    logger.debug("Scores decompressed");
     return JSON.parse(json) as CompactScore[];
 }
 
 const BACKUP_WIKI_PAGE = "therepbot/backup";
 
 export async function backupAllScores(_: MenuItemOnPressEvent, context: Context) {
-    logger.info("Starting backup process...");
 
     const backupEnabled = await context.settings.get<boolean>(AppSetting.EnableBackup);
     if (!backupEnabled) {
-        logger.warn("Backup disabled via settings.");
         context.ui.showToast("Backup function is disabled.");
         return;
     }
 
     const currentScores = await context.redis.zRange(POINTS_STORE_KEY, 0, -1);
     const currentScoreCount = await context.redis.zCard(POINTS_STORE_KEY);
-    logger.info("Fetched current scores", { count: currentScoreCount });
 
     if (currentScores.length === 1000 && currentScoreCount > 1000) {
-        logger.error("Score count exceeds backup limit.");
         context.ui.showToast("Cannot backup >1000 scores at this time.");
         return;
     }
@@ -66,14 +60,11 @@ export async function backupAllScores(_: MenuItemOnPressEvent, context: Context)
     const compressed = compressScores(compactScores);
 
     const subredditName = await getSubredditName(context);
-    logger.debug("Subreddit name fetched", { subredditName });
 
     try {
         let wikiPage = await context.reddit.getWikiPage(subredditName, BACKUP_WIKI_PAGE);
-        logger.info("Backup wiki page exists, updating...");
         await context.reddit.updateWikiPage({ subredditName, page: BACKUP_WIKI_PAGE, content: compressed });
     } catch {
-        logger.info("Backup wiki page does not exist, creating...");
         await context.reddit.createWikiPage({ subredditName, page: BACKUP_WIKI_PAGE, content: compressed });
         await context.reddit.updateWikiPageSettings({
             subredditName,
@@ -83,7 +74,6 @@ export async function backupAllScores(_: MenuItemOnPressEvent, context: Context)
         });
     }
 
-    logger.info("Backup completed and saved.");
     context.ui.showToast({
         text: "TheRepBot points have been backed up to the wiki",
         appearance: "success",
@@ -91,11 +81,9 @@ export async function backupAllScores(_: MenuItemOnPressEvent, context: Context)
 }
 
 export async function showRestoreForm(_: MenuItemOnPressEvent, context: Context) {
-    logger.info("Restore form requested...");
 
     const restoreEnabled = await context.settings.get<boolean>(AppSetting.EnableRestore);
     if (!restoreEnabled) {
-        logger.warn("Restore disabled via settings.");
         context.ui.showToast("Restore function is disabled in Settings.");
         return;
     }
@@ -106,7 +94,6 @@ export async function showRestoreForm(_: MenuItemOnPressEvent, context: Context)
     try {
         wikiPage = await context.reddit.getWikiPage(subredditName, BACKUP_WIKI_PAGE);
     } catch {
-        logger.warn("No backup wiki page found.");
     }
 
     if (!wikiPage) {
@@ -118,10 +105,8 @@ export async function showRestoreForm(_: MenuItemOnPressEvent, context: Context)
 }
 
 export async function restoreFormHandler(event: FormOnSubmitEvent<JSONObject>, context: Context) {
-    logger.info("Restore form submitted");
 
     const chosenAction = (event.values.action as string[])[0];
-    logger.debug("Restore action selected", { action: chosenAction });
 
     const subredditName = await getSubredditName(context);
     let wikiPage: WikiPage | undefined;
@@ -137,7 +122,7 @@ export async function restoreFormHandler(event: FormOnSubmitEvent<JSONObject>, c
     try {
         scores = decompressScores(wikiPage.content);
     } catch (error) {
-        await logger.error("Error decoding backup", { error }, context);
+        logger.error(`Error trying to decode backup: ${error}`)
         context.ui.showToast("Sorry, the backup could not be decoded.");
         return;
     }
@@ -145,7 +130,6 @@ export async function restoreFormHandler(event: FormOnSubmitEvent<JSONObject>, c
     const ajv = new Ajv.default();
     const validate = ajv.compile(schema);
     if (!validate(scores)) {
-        logger.error("Invalid backup format", { errors: ajv.errorsText(validate.errors) });
         context.ui.showToast("Sorry, the backup is in an invalid format.");
         return;
     }
@@ -158,12 +142,10 @@ export async function restoreFormHandler(event: FormOnSubmitEvent<JSONObject>, c
     });
 
     if (!scoresToAdd.length) {
-        logger.info("No scores eligible for restore.");
         context.ui.showToast("No scores could be imported with the chosen settings.");
         return;
     }
 
-    logger.info("Adding restored scores", { count: scoresToAdd.length });
     await context.redis.zAdd(POINTS_STORE_KEY, ...scoresToAdd.map(score => ({ member: score.u, score: score.s })));
 
     await populateCleanupLogAndScheduleCleanup(context);
@@ -181,7 +163,6 @@ export async function restoreFormHandler(event: FormOnSubmitEvent<JSONObject>, c
     await scheduleAdhocCleanup(context);
 
     context.ui.showToast(`Successfully imported ${scoresToAdd.length} ${pluralize("score", scoresToAdd.length)}.`);
-    logger.info("Restore completed successfully.");
 }
 
 export const restoreForm: Form = {

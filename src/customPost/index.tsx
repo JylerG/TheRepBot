@@ -54,18 +54,15 @@ export async function createCustomPostFormHandler(
     context: Context
 ) {
     const redisKey = "customPostData";
-    logger.info("CustomPost: Form submitted", { values: event.values });
 
     try {
         if (event.values.removeExisting) {
             const customPostData = await context.redis.get(redisKey);
-            logger.debug("CustomPost: Existing post data", { redisKey, customPostData });
 
             if (customPostData) {
                 const data = JSON.parse(customPostData) as CustomPostData;
                 const post = await context.reddit.getPostById(data.postId);
                 await post.remove();
-                logger.info("CustomPost: Removed previous leaderboard post", { postId: data.postId });
             }
         }
 
@@ -73,7 +70,6 @@ export async function createCustomPostFormHandler(
         postTitle ??= "TheRepBot High Scores";
 
         const subredditName = await getSubredditName(context);
-        logger.debug("CustomPost: Submitting new post", { subredditName, postTitle });
 
         const post = await context.reddit.submitPost({
             subredditName,
@@ -88,11 +84,9 @@ export async function createCustomPostFormHandler(
         };
 
         await context.redis.set(redisKey, JSON.stringify(newData));
-        logger.info("CustomPost: Stored new leaderboard post data", { newData });
 
         if (event.values.stickyPost) {
             await post.sticky();
-            logger.info("CustomPost: Post stickied", { postId: post.id });
         }
 
         context.ui.showToast({
@@ -101,9 +95,8 @@ export async function createCustomPostFormHandler(
         });
 
         context.ui.navigateTo(post);
-        logger.info("CustomPost: Navigated to new leaderboard post", { postId: post.id });
     } catch (err) {
-        logger.error("CustomPost: Failed to create leaderboard post", { error: err });
+        logger.error(`Error trying to create leaderboard post: ${err}`)
         context.ui.showToast({
             text: "Failed to create leaderboard post. See logs.",
             appearance: "neutral",
@@ -112,7 +105,6 @@ export async function createCustomPostFormHandler(
 }
 
 export function createCustomPostMenuHandler (_: MenuItemOnPressEvent, context: Context) {
-    logger.info("CustomPost: Showing leaderboard creation form.");
     context.ui.showForm(customPostFormKey);
 }
 
@@ -121,7 +113,6 @@ export const leaderboardCustomPost: CustomPostType = {
     description: "Post that displays TheRepBot high scorers",
     height: "tall",
     render: (context) => {
-        logger.debug("CustomPost: Rendering leaderboard custom post.");
         const state = new LeaderboardState(context);
 
         return (
@@ -136,9 +127,6 @@ export const leaderboardCustomPost: CustomPostType = {
                             <button
                                 icon="help"
                                 onPress={() => {
-                                    logger.info("CustomPost: Navigating to help URL", {
-                                        url: state.leaderboardHelpUrl[0],
-                                    });
                                     state.context.ui.navigateTo(state.leaderboardHelpUrl[0]);
                                 }}
                             />
@@ -159,9 +147,6 @@ export const leaderboardCustomPost: CustomPostType = {
                                         score={entry.score}
                                         rank={entry.rank}
                                         navigateToProfile={() => {
-                                            logger.info("CustomPost: Navigating to user profile", {
-                                                username: entry.username,
-                                            });
                                             context.ui.navigateTo(`https://reddit.com/u/${entry.username}`);
                                         }}
                                     />
@@ -173,9 +158,6 @@ export const leaderboardCustomPost: CustomPostType = {
                                     disabled={state.page === 1}
                                     onPress={() => {
                                         state.page -= 1;
-                                        logger.info("CustomPost: Moved to previous leaderboard page", {
-                                            newPage: state.page,
-                                        });
                                     }}
                                 >
                                     {" "}
@@ -185,7 +167,6 @@ export const leaderboardCustomPost: CustomPostType = {
                                 <text
                                     onPress={() => {
                                         state.page = 1;
-                                        logger.info("CustomPost: Reset leaderboard to page 1.");
                                     }}
                                 >
                                     {state.page}
@@ -195,9 +176,6 @@ export const leaderboardCustomPost: CustomPostType = {
                                     disabled={state.page === state.maxPage}
                                     onPress={() => {
                                         state.page += 1;
-                                        logger.info("CustomPost: Moved to next leaderboard page", {
-                                            newPage: state.page,
-                                        });
                                     }}
                                 >
                                     {" "}

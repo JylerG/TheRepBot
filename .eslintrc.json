@@ -3,5 +3,14 @@
   "rules": {
     "sonarjs/no-duplicate-string": "off",
     "sonarjs/no-identical-functions": "off"
-  }
+  },
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "project": "./tsconfig.json",
+    "tsconfigRootDir": "."
+  },
+  "extends": [
+    "plugin:@typescript-eslint/recommended",
+    "plugin:@typescript-eslint/recommended-requiring-type-checking"
+  ]
 }

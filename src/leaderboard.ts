@@ -10,7 +10,6 @@ import { LeaderboardMode, AppSetting, TemplateDefaults } from "./settings.js";
 import markdownEscape from "markdown-escape";
 import pluralize from "pluralize";
 import { format } from "date-fns";
-import { logger } from "./logger.js";
 
 const TIMEFRAMES = ["daily", "weekly", "monthly", "yearly", "alltime"] as const;
 
@@ -61,23 +60,18 @@ export async function updateLeaderboard(
     event: ScheduledJobEvent<JSONObject | undefined>,
     context: JobContext
 ) {
-    logger.info("\x1b[34m[Leaderboard] Update job started...\x1b[0m");
 
     const settings = await context.settings.getAll();
     const leaderboardMode = settings[AppSetting.LeaderboardMode] as
         | string[]
         | undefined;
     if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) {
-        logger.info("\x1b[33m[Leaderboard] Mode is OFF. Exiting.\x1b[0m");
         return;
     }
 
     const wikiPageName =
         (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
     if (!wikiPageName) {
-        logger.warn(
-            "\x1b[33m[Leaderboard] No wiki page name configured. Exiting.\x1b[0m"
-        );
         return;
     }
 
@@ -87,9 +81,6 @@ export async function updateLeaderboard(
     const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
     const subredditName = await getSubredditName(context);
     if (!subredditName) {
-        logger.error(
-            "\x1b[31m[Leaderboard] Could not determine subreddit name.\x1b[0m"
-        );
         return;
     }
 
@@ -121,9 +112,6 @@ export async function updateLeaderboard(
 
         const title =
             timeframe === "alltime" ? "All Time" : capitalize(timeframe);
-        logger.info(
-            `\x1b[34m[Leaderboard] Rendering ${title} leaderboard with ${scores.length} entries...\x1b[0m`
-        );
 
         markdown += `\n\n## ${title}\n| Rank | User | ${capitalize(
             pointName
@@ -131,9 +119,6 @@ export async function updateLeaderboard(
 
         if (scores.length === 0) {
             markdown += `| – | No data yet | – |\n`;
-            logger.warn(
-                `\x1b[33m[Leaderboard] No scores for ${title} — placeholder row added.\x1b[0m`
-            );
         } else {
             for (let i = 0; i < scores.length; i++) {
                 const entry = scores[i];
@@ -148,9 +133,6 @@ export async function updateLeaderboard(
 
                 try {
                     await context.reddit.getWikiPage(subredditName, userPage);
-                    logger.debug(
-                        `\x1b[90m[Leaderboard] Wiki exists: ${userPage}\x1b[0m`
-                    );
                 } catch {
                     const content = `This is the wiki page for u/${username}'s reputation in r/${subredditName}.`;
                     await context.reddit.createWikiPage({
@@ -165,9 +147,6 @@ export async function updateLeaderboard(
                         listed: true,
                         permLevel: correctPermissionLevel,
                     });
-                    logger.info(
-                        `\x1b[36m[Leaderboard] Created wiki page: ${username}\x1b[0m`
-                    );
                 }
             }
         }
@@ -177,9 +156,6 @@ export async function updateLeaderboard(
             const ttl = Math.floor((expiry.getTime() - Date.now()) / 1000);
             if (ttl > 0) {
                 await context.redis.expire(redisKey, ttl);
-                logger.debug(
-                    `\x1b[90m[Leaderboard] Redis expiration set for ${title} — ${ttl}s\x1b[0m`
-                );
             }
         }
     }
@@ -198,7 +174,6 @@ export async function updateLeaderboard(
                 content: markdown,
                 reason: `Updated ${formattedDate}`,
             });
-            logger.info("\x1b[32m[Leaderboard] Wiki content updated.\x1b[0m");
         }
 
         const wikiSettings = await wikiPage.getSettings();
@@ -209,9 +184,6 @@ export async function updateLeaderboard(
                 listed: true,
                 permLevel: correctPermissionLevel,
             });
-            logger.info(
-                "\x1b[32m[Leaderboard] Wiki permissions updated.\x1b[0m"
-            );
         }
     } catch {
         await context.reddit.createWikiPage({
@@ -226,12 +198,7 @@ export async function updateLeaderboard(
             listed: true,
             permLevel: correctPermissionLevel,
         });
-        logger.info(
-            "\x1b[36m[Leaderboard] Wiki page created and configured.\x1b[0m"
-        );
     }
-
-    logger.info("\x1b[32m[Leaderboard] Update job completed.\x1b[0m");
 }
 
 function capitalize(word: string): string {

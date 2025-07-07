@@ -3,14 +3,12 @@ import { addDays, addMinutes, subMinutes } from "date-fns";
 import { POINTS_STORE_KEY } from "./thanksPoints.js";
 import { CronExpressionParser } from "cron-parser";
 import { ADHOC_CLEANUP_JOB, CLEANUP_JOB_CRON } from "./constants.js";
-import { logger } from "./logger.js";
 
 const CLEANUP_LOG_KEY = "cleanupStore";
 const DAYS_BETWEEN_CHECKS = 28;
 
 export async function setCleanupForUsers(usernames: string[], context: TriggerContext) {
     if (usernames.length === 0) {
-        logger.debug("No usernames passed to setCleanupForUsers.");
         return;
     }
 
@@ -22,7 +20,6 @@ export async function setCleanupForUsers(usernames: string[], context: TriggerCo
         }))
     );
 
-    logger.info(`Scheduled cleanup for ${usernames.length} users.`);
 }
 
 async function userActive(username: string, context: TriggerContext): Promise<boolean> {
@@ -30,7 +27,6 @@ async function userActive(username: string, context: TriggerContext): Promise<bo
         const user = await context.reddit.getUserByUsername(username);
         return !!user;
     } catch {
-        logger.warn(`Failed to retrieve user: u/${username} — assuming deleted or suspended.`);
         return false;
     }
 }
@@ -41,13 +37,11 @@ interface UserActive {
 }
 
 export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext) {
-    logger.info("Starting cleanupDeletedAccounts job...");
 
     const now = new Date().getTime();
     const items = await context.redis.zRange(CLEANUP_LOG_KEY, 0, now, { by: "score" });
 
     if (items.length === 0) {
-        logger.info("No users scheduled for cleanup. Scheduling next adhoc check...");
         await scheduleAdhocCleanup(context);
         return;
     }
@@ -56,8 +50,6 @@ export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext
 
     const itemsToCheck = 50;
     const usersToCheck = items.slice(0, itemsToCheck).map(item => item.member);
-
-    logger.debug("Checking activity for users:", { usersToCheck });
 
     const userStatuses: UserActive[] = [];
     for (const username of usersToCheck) {
@@ -68,12 +60,6 @@ export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext
     const activeUsers = userStatuses.filter(u => u.isActive).map(u => u.username);
     const deletedUsers = userStatuses.filter(u => !u.isActive).map(u => u.username);
 
-    logger.info("Cleanup results", {
-        totalChecked: userStatuses.length,
-        activeCount: activeUsers.length,
-        deletedCount: deletedUsers.length,
-    });
-
     if (activeUsers.length > 0) {
         await setCleanupForUsers(activeUsers, context);
     }
@@ -82,7 +68,6 @@ export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext
         await context.redis.zRem(POINTS_STORE_KEY, deletedUsers);
         await context.redis.zRem(CLEANUP_LOG_KEY, deletedUsers);
 
-        logger.info(`Removed ${deletedUsers.length} deleted users from Redis and leaderboard.`);
 
         await context.scheduler.runJob({
             name: "updateLeaderboard",
@@ -92,7 +77,6 @@ export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext
     }
 
     if (items.length > itemsToCheck) {
-        logger.info("Backlog detected — scheduling next cleanup immediately.");
         await context.scheduler.runJob({
             name: "cleanupDeletedAccounts",
             runAt: new Date(),
@@ -103,7 +87,6 @@ export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext
 }
 
 export async function populateCleanupLogAndScheduleCleanup(context: TriggerContext) {
-    logger.info("Running populateCleanupLogAndScheduleCleanup...");
 
     const scoreUsers = (await context.redis.zRange(POINTS_STORE_KEY, 0, -1)).map(u => u.member);
     const cleanupUsers = (await context.redis.zRange(CLEANUP_LOG_KEY, 0, -1)).map(u => u.member);
@@ -119,12 +102,10 @@ export async function populateCleanupLogAndScheduleCleanup(context: TriggerConte
                 score: addMinutes(new Date(), Math.random() * 60 * 24 * DAYS_BETWEEN_CHECKS).getTime(),
             }))
         );
-        logger.info(`Added ${toAdd.length} new users to cleanup log.`);
     }
 
     if (toRemove.length > 0) {
         await context.redis.zRem(CLEANUP_LOG_KEY, toRemove);
-        logger.info(`Removed ${toRemove.length} obsolete users from cleanup log.`);
     }
 
     const redisKey = "prevTimeBetweenChecks";
@@ -139,7 +120,6 @@ export async function populateCleanupLogAndScheduleCleanup(context: TriggerConte
                 score: addMinutes(new Date(), Math.random() * 60 * 24 * DAYS_BETWEEN_CHECKS).getTime(),
             }))
         );
-        logger.info(`Rescheduled ${cleanupUsers.length} users in cleanup log due to check interval change.`);
         await context.redis.set(redisKey, newValue);
     }
 
@@ -147,7 +127,6 @@ export async function populateCleanupLogAndScheduleCleanup(context: TriggerConte
     const adhocJobs = jobs.filter(job => job.name === ADHOC_CLEANUP_JOB);
     await Promise.all(adhocJobs.map(job => context.scheduler.cancelJob(job.id)));
 
-    logger.debug(`Cancelled ${adhocJobs.length} existing adhoc cleanup jobs.`);
 
     await scheduleAdhocCleanup(context);
 }
@@ -156,7 +135,6 @@ export async function scheduleAdhocCleanup(context: TriggerContext) {
     const nextEntries = await context.redis.zRange(CLEANUP_LOG_KEY, 0, 0, { by: "rank" });
 
     if (nextEntries.length === 0) {
-        logger.debug("No entries in cleanup log for scheduling adhoc cleanup.");
         return;
     }
 
@@ -165,17 +143,10 @@ export async function scheduleAdhocCleanup(context: TriggerContext) {
     const nextScheduledTime = CronExpressionParser.parse(CLEANUP_JOB_CRON).next().toDate();
 
     if (nextAdhocTime < subMinutes(nextScheduledTime, 5)) {
-        logger.info("Scheduling adhoc cleanup job.", {
             runAt: nextAdhocTime.toUTCString(),
-        });
         await context.scheduler.runJob({
             name: ADHOC_CLEANUP_JOB,
             runAt: nextAdhocTime < new Date() ? new Date() : nextAdhocTime,
         });
-    } else {
-        logger.info("Adhoc cleanup not needed. Scheduled cleanup is soon.", {
-            nextCleanupLogTime: nextCleanupTime.toUTCString(),
-            nextScheduledTime: nextScheduledTime.toUTCString(),
-        });
-    }
+    };
 }
