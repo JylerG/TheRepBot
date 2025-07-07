@@ -81,7 +81,7 @@ export async function updateLeaderboard(
         const scores = await context.redis.zRange(redisKey, 0, leaderboardSize - 1, { by: "score", reverse: true });
         const title = timeframe === "alltime" ? "All Time" : capitalize(timeframe);
 
-        markdown += `\n\n## ${title}\n| Rank | User | ${capitalize(pointName)}${pointName.endsWith("s") ? "" : "s"} ${pointSymbol} |\n|------|------|---------|\n`;
+        markdown += `\n\n## ${title}\n| Rank | User | ${capitalize(pointName)}${pointName.endsWith("s") ? "" : "s"} |\n|------|------|---------|\n`;
 
         if (scores.length === 0) {
             markdown += `| – | No data yet | – |\n`;
