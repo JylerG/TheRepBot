@@ -2,7 +2,8 @@ import { Context, FormOnSubmitEvent, JSONObject, MenuItemOnPressEvent, Scheduled
 import { CommentSubmit, CommentUpdate } from "@devvit/protos";
 import { getSubredditName, isModerator, replaceAll } from "./utility.js";
 import { addWeeks, format } from "date-fns";
-import { ExistingFlairOverwriteHandling, ReplyOptions, TemplateDefaults, AppSetting } from "./settings.js";
+
+import { ExistingFlairOverwriteHandling, AppSetting, PointAwardedReplyOptions } from "./settings.js";
 import markdownEscape from "markdown-escape";
 import { setCleanupForUsers } from "./cleanupTasks.js";
 import { isLinkId } from "@devvit/shared-types/tid.js";
@@ -22,8 +23,15 @@ function formatMessage(
         const regex = new RegExp(`{{${key}}}`, "g");
         result = result.replace(regex, value);
     }
+
+    const footer = "\n\n---\n\n^(I am a bot - please contact the mods with any questions)";
+    if (!result.trim().endsWith("^(I am a bot - please contact the mods with any questions)")) {
+        result = result.trim() + footer;
+    }
+
     return result;
 }
+
 
 async function getCurrentScore(
     user: User,
@@ -177,492 +185,168 @@ async function getUserIsSuperuser(
 }
 
 export async function handleThanksEvent(
-    event: CommentSubmit | CommentUpdate,
-    context: TriggerContext
+  event: CommentSubmit | CommentUpdate,
+  context: TriggerContext
 ) {
+  if (!event.comment || !event.post || !event.author || !event.subreddit) return;
 
-    // Step 1: Filter message-related settings
-const messageEntries = Object.entries(AppSetting).filter(([key]) =>
-    key.toLowerCase().includes("message")
-);
+  logger.debug("handleThanksEvent triggered", {
+    commentId: event.comment.id,
+    commentBody: event.comment.body,
+    postId: event.post.id,
+    authorName: event.author.name,
+    subreddit: event.subreddit.name,
+  });
 
-// Step 2: Build a logger object with readable camelCase keys
-const messageLogger: Record<string, string> = {};
-for (const [key, value] of messageEntries) {
-    const camelCaseKey =
-        key.charAt(0).toLowerCase() + key.slice(1); // simple camelCase transform
-    messageLogger[camelCaseKey] = value;
-}
+  if (isLinkId(event.comment.parentId)) return;
 
-// Step 3: Log all the message settings
-console.log("📬 Loaded AppSetting messages into logger:\n");
-for (const [key, value] of Object.entries(messageLogger)) {
-    console.log(`${key}: "${value}"`);
-}
+  if (
+    event.author.name === context.appName ||
+    event.author.name === "AutoModerator"
+  ) return;
 
-    if (!event.comment || !event.post || !event.author || !event.subreddit)
-        return;
+  const settings = await context.settings.getAll();
 
-    if (isLinkId(event.comment.parentId)) return; // No top-level comment awarding
-    if (
-        event.author.name === context.appName ||
-        event.author.name === "AutoModerator"
-    )
-        return;
+  const accessControl = (settings[AppSetting.AccessControl] as string[] ?? [])[0] ?? "moderators-only";
+  const isMod = await isModerator(context, event.subreddit.name, event.author.name);
+  const approvedUsers = (settings[AppSetting.SuperUsers] as string ?? "")
+    .split("\n")
+    .map((u) => u.trim().toLowerCase())
+    .filter(Boolean);
+  const isApprovedUser = approvedUsers.includes(event.author.name.toLowerCase());
+  const isOP = event.author.id === event.post.authorId;
 
-    const settings = await context.settings.getAll();
-    const userCommandVal = settings[AppSetting.PointTriggerWords] as
-        | string
-        | undefined;
-    const userCommandList =
-        userCommandVal?.split("\n").map((cmd) => cmd.toLowerCase().trim()) ?? [];
-    const modCommand = settings[AppSetting.ModAwardCommand] as
-        | string
-        | undefined;
+  let hasPermission = false;
+  switch (accessControl) {
+    case "everyone":
+      hasPermission = true;
+      break;
+    case "moderators-only":
+      hasPermission = isMod;
+      break;
+    case "moderators-and-approved-users":
+      hasPermission = isMod || isApprovedUser;
+      break;
+    case "moderators-approved-and-op":
+      hasPermission = isMod || isApprovedUser || isOP;
+      break;
+  }
 
-    let containsUserCommand: boolean;
-    if (settings[AppSetting.ThanksCommandUsesRegex]) {
-        const regexes = userCommandList.map(
-            (command) => new RegExp(command, "i")
-        );
-        containsUserCommand = regexes.some((regex) =>
-            event.comment ? regex.test(event.comment.body) : false
-        );
-    } else {
-        containsUserCommand = userCommandList.some(
-            (command) =>
-                event.comment &&
-                event.comment.body.toLowerCase().includes(command)
-        );
-    }
+  if (!hasPermission) {
+    logger.debug("User lacks permission to award", { accessControl, isMod, isApprovedUser, isOP });
+    return;
+  }
 
-    const containsModCommand =
-        modCommand &&
-        event.comment.body
-            .toLowerCase()
-            .includes(modCommand.toLowerCase().trim());
+  const userCommandVal = settings[AppSetting.PointTriggerWords] as string | undefined;
+  const userCommandList = userCommandVal?.split("\n").map((cmd) => cmd.toLowerCase().trim()) ?? [];
+  const modCommand = settings[AppSetting.ModAwardCommand] as string | undefined;
 
-    if (!containsUserCommand && !containsModCommand) return;
-
-    logger.info(
-        `${event.comment.id}: Comment from ${event.author.name} contains a reputation points command.`
+  let containsUserCommand: boolean;
+  if (settings[AppSetting.ThanksCommandUsesRegex]) {
+    const regexes = userCommandList.map((command) => new RegExp(command, "i"));
+    containsUserCommand = regexes.some((regex) => regex.test(event.comment?.body ?? ""));
+  } else {
+    containsUserCommand = userCommandList.some((command) =>
+      event.comment?.body.toLowerCase().includes(command)
     );
+  }
 
-    // Blocked flairs
-    const postFlairTextToIgnoreSetting =
-        (settings[AppSetting.PostFlairTextToIgnore] as string) ?? "";
-    if (postFlairTextToIgnoreSetting && event.post.linkFlair) {
-        const blockedFlairs = postFlairTextToIgnoreSetting
-            .split(",")
-            .map((f) => f.trim().toLowerCase());
-        const postFlair = event.post.linkFlair.text.toLowerCase();
-        if (blockedFlairs.includes(postFlair)) {
-            logger.info(
-                `${event.comment.id}: Cannot award points to post with flair '${postFlair}'`
-            );
-            return;
-        }
-    }
+  const containsModCommand =
+    modCommand &&
+    event.comment.body.toLowerCase().includes(modCommand.toLowerCase().trim());
 
-    // Check mod/superuser status
-    const isMod = await isModerator(
-        context,
-        event.subreddit.name,
-        event.author.name
-    );
+  logger.debug("Command matching result", {
+    userCommandVal,
+    userCommandList,
+    modCommand,
+    containsUserCommand,
+    containsModCommand,
+  });
 
-    if (containsUserCommand && event.author.id !== event.post.authorId) {
-        const accessControl = settings[AppSetting.AccessControl];
-        const isEveryone =
-            accessControl === "everyone" ||
-            (Array.isArray(accessControl) && accessControl[0] === "everyone");
-        if (!isEveryone) {
-            logger.info(
-                `${event.comment.id}: points attempt made by ${event.author.name} who is not the OP and access control is not 'everyone'.`
-            );
-            return;
-        }
-    } else if (containsModCommand) {
-        const userIsSuperuser = await getUserIsSuperuser(
-            event.author.name,
-            context
-        );
-        if (!isMod && !userIsSuperuser) {
-            logger.info(
-                `${event.comment.id}: mod points attempt by ${event.author.name} who is neither a mod nor a superuser`
-            );
-            return;
-        }
-    }
+  if (!containsUserCommand && !containsModCommand) return;
 
-    // Users who can't award points
-    const blockedAwardersRaw = settings[AppSetting.UsersWhoCannotAwardPoints];
-    const blockedAwarders =
-        typeof blockedAwardersRaw === "string" && blockedAwardersRaw.length > 0
-            ? blockedAwardersRaw.split(",").map((u) => u.trim().toLowerCase())
-            : [];
+  const parentComment = await context.reddit.getCommentById(event.comment.parentId);
+  if (!parentComment || parentComment.authorName === event.author.name) return;
 
-    if (blockedAwarders.includes(event.author.name.toLowerCase())) {
-        logger.info(
-            `${event.comment.id}: ${event.author.name} is not permitted to award points.`
-        );
+  const parentUser = await parentComment.getAuthor();
+  if (!parentUser) return;
 
-        const notifyRaw = settings[AppSetting.NotifyOnError];
-        const replyMode =
-            typeof notifyRaw === "string" &&
-            Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
-                ? (notifyRaw as ReplyOptions)
-                : ReplyOptions.NoReply;
-        if (replyMode === ReplyOptions.NoReply) return;
+  const { currentScore, flairScoreIsNaN } = await getCurrentScore(parentUser, context, settings);
+  const newScore = currentScore + 1;
 
-        if (replyMode === ReplyOptions.ReplyByPM) {
-            const subredditName = await getSubredditName(context);
-            try {
-                await context.reddit.sendPrivateMessage({
-                    subject: `Message from TheRepBot on ${subredditName}`,
-                    text: settings[AppSetting.UsersWhoCannotAwardPointsMessage] as string,
-                    to: event.author.name,
-                });
-                logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
-            } catch {
-                logger.warn(
-                    `${event.comment.id}: Error sending PM notification to ${event.author.name}. User may only allow PMs from whitelisted users.`
-                );
-            }
-        } else if (replyMode === ReplyOptions.ReplyAsComment) {
-            await context.reddit.submitComment({
-                id: event.comment.id,
-                text: settings[AppSetting.UsersWhoCannotAwardPointsMessage] as string,
-            });
-            logger.info(
-                `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
-            );
-            logger.info(
-                `Notification: User ${event.author.name} was notified with a public comment reply.`
-            );
-        }
-        return;
-    }
+  logger.debug("Score update about to happen", {
+    username: parentComment.authorName,
+    currentScore,
+    newScore,
+    flairScoreIsNaN,
+  });
 
-    const parentComment = await context.reddit.getCommentById(
-        event.comment.parentId
-    );
+  await setUserScore(parentComment.authorName, newScore, flairScoreIsNaN, context, settings);
 
-    if (!parentComment || parentComment.authorName === event.author.name) {
-        logger.info(
-            `${event.comment.id}: Self-award or invalid parent comment.`
-        );
+  await context.redis.set(`thanks-${parentComment.id}-${event.author.name}`, Date.now().toString(), {
+    expiration: addWeeks(new Date(), 1),
+  });
 
-        const notifyRaw = settings[AppSetting.NotifyOnError];
-        const notify =
-            typeof notifyRaw === "string" &&
-            Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
-                ? (notifyRaw as ReplyOptions)
-                : ReplyOptions.NoReply;
+  const rawNotifySetting = (settings[AppSetting.NotifyOnSuccess] as string[] ?? [])[0] ?? "none";
 
-        if (notify !== ReplyOptions.NoReply) {
-            const msgRaw = settings[AppSetting.SelfAwardMessage];
-            const msg =
-                typeof msgRaw === "string"
-                    ? msgRaw
-                    : "You can't award yourself a {{name}}.";
+  const notify: PointAwardedReplyOptions = Object.values(PointAwardedReplyOptions).includes(
+    rawNotifySetting as PointAwardedReplyOptions
+  )
+    ? (rawNotifySetting as PointAwardedReplyOptions)
+    : PointAwardedReplyOptions.NoReply;
 
-            const pointNameRaw = settings[AppSetting.PointName];
-            const pointName =
-                typeof pointNameRaw === "string" ? pointNameRaw : "point";
+  if (notify !== PointAwardedReplyOptions.NoReply) {
+    const scoreboardLink = settings[AppSetting.ScoreboardLink] as string | undefined;
+    const pointName = settings[AppSetting.PointName] as string ?? "point";
+    const pointSymbol = settings[AppSetting.PointSymbol] as string ?? "";
+    const successTemplate = settings[AppSetting.SuccessMessage] as string ?? 
+      "+1 {{name}} awarded to u/{{awardee}} by u/{{awarder}}. Total: {{total}}{{symbol}}. Scoreboard is located [here]({{scoreboard}})";
 
-            const message = replaceAll(
-                msg,
-                "{{name}}",
-                markdownEscape(pointName)
-            );
+    const scoreboard = `https://www.reddit.com/r/${event.subreddit.name}/wiki/${scoreboardLink ?? "leaderboard"}`;
 
-            if (notify === ReplyOptions.ReplyByPM) {
-                const subredditName = await getSubredditName(context);
-                try {
-                    await context.reddit.sendPrivateMessage({
-                        subject: `Message from TheRepBot on ${subredditName}`,
-                        text: message,
-                        to: event.author.name,
-                    });
-                    logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
-                } catch {
-                    logger.warn(
-                        `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
-                    );
-                }
-            } else if (notify === ReplyOptions.ReplyAsComment) {
-                await context.reddit.submitComment({
-                    id: event.comment.id,
-                    text: message,
-                });
-                logger.info(
-                    `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
-                );
-            }
-        }
-        return;
-    }
-
-    if (["AutoModerator", context.appName].includes(parentComment.authorName)) {
-        logger.info(`${event.comment.id}: Can't award points to bot user.`);
-
-        const notifyRaw = settings[AppSetting.NotifyOnError];
-        const notify =
-            typeof notifyRaw === "string" &&
-            Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
-                ? (notifyRaw as ReplyOptions)
-                : ReplyOptions.NoReply;
-
-        if (notify !== ReplyOptions.NoReply) {
-            const messageRaw = settings[AppSetting.BotAwardMessage];
-            const message =
-                typeof messageRaw === "string"
-                    ? messageRaw
-                    : "You can't award the bot a {{name}}.";
-
-            if (notify === ReplyOptions.ReplyByPM) {
-                const subredditName = await getSubredditName(context);
-                try {
-                    await context.reddit.sendPrivateMessage({
-                        subject: `Message from TheRepBot on ${subredditName}`,
-                        text: message,
-                        to: event.author.name,
-                    });
-                    logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
-                } catch {
-                    logger.warn(
-                        `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
-                    );
-                }
-            } else if (notify === ReplyOptions.ReplyAsComment) {
-                await context.reddit.submitComment({
-                    id: event.comment.id,
-                    text: message,
-                });
-                logger.info(
-                    `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
-                );
-            }
-        }
-
-        return;
-    }
-
-    const excludedUsersRaw = settings[AppSetting.UsersWhoCannotBeAwardedPoints];
-    const excludedUsers =
-        typeof excludedUsersRaw === "string"
-            ? excludedUsersRaw.split(",").map((u) => u.trim().toLowerCase())
-            : [];
-
-    if (excludedUsers.includes(parentComment.authorName.toLowerCase())) {
-        logger.info(
-            `${event.comment.id}: ${parentComment.authorName} is on the exclusion list.`
-        );
-
-        const notifyRaw = settings[AppSetting.NotifyOnError];
-        const notify =
-            typeof notifyRaw === "string" &&
-            Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
-                ? (notifyRaw as ReplyOptions)
-                : ReplyOptions.NoReply;
-
-        if (notify !== ReplyOptions.NoReply) {
-            let messageRaw =
-                settings[AppSetting.UsersWhoCannotBeAwardedPointsMessage];
-            const message =
-                typeof messageRaw === "string"
-                    ? messageRaw
-                    : "Sorry, you cannot award points to {{awardee}} as they are excluded from receiving points.";
-
-            const replacedMessage = replaceAll(
-                message,
-                "{{awardee}}",
-                markdownEscape(parentComment.authorName)
-            );
-
-            if (notify === ReplyOptions.ReplyByPM) {
-                const subredditName = await getSubredditName(context);
-                try {
-                    await context.reddit.sendPrivateMessage({
-                        subject: `Message from TheRepBot on ${subredditName}`,
-                        text: replacedMessage,
-                        to: event.author.name,
-                    });
-                    logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
-                } catch {
-                    logger.warn(
-                        `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
-                    );
-                }
-            } else if (notify === ReplyOptions.ReplyAsComment) {
-                await context.reddit.submitComment({
-                    id: event.comment.id,
-                    text: replacedMessage,
-                });
-                logger.info(
-                    `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
-                );
-            }
-        }
-        return;
-    }
-
-    // Prevent double-awards
-    const redisKey = `thanks-${parentComment.id}-${event.author.name}`;
-    const alreadyThanked = await context.redis.get(redisKey);
-
-    if (alreadyThanked) {
-        logger.info(`${event.comment.id}: Already awarded.`);
-
-        const notifyRaw = settings[AppSetting.NotifyOnError];
-        const notify =
-            typeof notifyRaw === "string" &&
-            Object.values(ReplyOptions).includes(notifyRaw as ReplyOptions)
-                ? (notifyRaw as ReplyOptions)
-                : ReplyOptions.NoReply;
-
-        if (notify !== ReplyOptions.NoReply) {
-            let messageRaw = settings[AppSetting.DuplicateAwardMessage];
-            const message =
-                typeof messageRaw === "string"
-                    ? messageRaw
-                    : "This user has already been awarded for this comment.";
-
-            const formattedMessage = formatMessage(message, {
-                awardee: parentComment.authorName,
-                name: String(settings[AppSetting.PointName] ?? "point"),
-            });
-
-            if (notify === ReplyOptions.ReplyByPM) {
-                const subredditName = await getSubredditName(context);
-                try {
-                    await context.reddit.sendPrivateMessage({
-                        subject: `Message from TheRepBot on ${subredditName}`,
-                        text: formattedMessage,
-                        to: event.author.name,
-                    });
-                    logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
-                } catch {
-                    logger.warn(
-                        `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
-                    );
-                }
-            } else if (notify === ReplyOptions.ReplyAsComment) {
-                await context.reddit.submitComment({
-                    id: event.comment.id,
-                    text: formattedMessage,
-                });
-                logger.info(
-                    `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
-                );
-            }
-        }
-        return;
-    }
-
-    // Add point
-    const parentUser = await parentComment.getAuthor();
-    if (!parentUser) return;
-
-    const { currentScore, flairScoreIsNaN } = await getCurrentScore(
-        parentUser,
-        context,
-        settings
-    );
-    const newScore = currentScore + 1;
-    await setUserScore(
-        parentComment.authorName,
-        newScore,
-        flairScoreIsNaN,
-        context,
-        settings
-    );
-    logger.info(
-        `${event.comment.id}: Score for ${parentComment.authorName} is now ${newScore}`
-    );
-
-    // Set flair if enabled
-    if (settings[AppSetting.SetPostFlairOnThanks]) {
-        const text =
-            typeof settings[AppSetting.SetPostFlairText] === "string" &&
-            settings[AppSetting.SetPostFlairText]?.trim() !== ""
-                ? settings[AppSetting.SetPostFlairText]
-                : undefined;
-
-        const cssClass =
-            typeof settings[AppSetting.SetPostFlairCSSClass] === "string" &&
-            settings[AppSetting.SetPostFlairCSSClass]?.trim() !== ""
-                ? settings[AppSetting.SetPostFlairCSSClass]
-                : undefined;
-
-        const flairTemplateId =
-            typeof settings[AppSetting.SetPostFlairTemplate] === "string" &&
-            settings[AppSetting.SetPostFlairTemplate]?.trim() !== ""
-                ? settings[AppSetting.SetPostFlairTemplate]
-                : undefined;
-
-        await context.reddit.setPostFlair({
-            postId: event.post.id,
-            subredditName: event.subreddit.name,
-            text,
-            cssClass,
-            flairTemplateId,
-        });
-    }
-
-    // Set Redis thank key with 1-week expiration
-    await context.redis.set(redisKey, Date.now().toString(), {
-        expiration: addWeeks(new Date(), 1),
+    const message = formatMessage(successTemplate, {
+      awardee: parentComment.authorName,
+      awarder: event.author.name,
+      total: newScore.toString(),
+      name: pointName,
+      symbol: pointSymbol,
+      scoreboard,
     });
 
-    // Notify user of success
-    const rawNotify = settings[AppSetting.NotifyOnSuccess];
-    const notify: ReplyOptions = Object.values(ReplyOptions).includes(
-        rawNotify as ReplyOptions
-    )
-        ? (rawNotify as ReplyOptions)
-        : ReplyOptions.NoReply;
+    logger.debug("Sending user notification", {
+      notify,
+      awarder: event.author.name,
+      awardee: parentComment.authorName,
+      message,
+    });
 
-    if (notify !== ReplyOptions.NoReply) {
-        let message = String(
-            settings[AppSetting.SuccessMessage] ??
-                "+1 {{name}} awarded to u/{{awardee}} by u/{{awarder}}. Total: {{total}}{{symbol}}. Scoreboard is located [here]({{scoreboard}})"
-        );
-
-        if (notify === ReplyOptions.ReplyByPM) {
-            const subredditName = await getSubredditName(context);
-            try {
-                await context.reddit.sendPrivateMessage({
-                    subject: `Message from TheRepBot on ${subredditName}`,
-                    text: message,
-                    to: event.author.name,
-                });
-                logger.info(`${event.comment.id}: PM sent to ${event.author.name}.`);
-            } catch {
-                logger.warn(
-                    `${event.comment.id}: Error sending PM notification to ${event.author.name}.`
-                );
-            }
-        } else if (notify === ReplyOptions.ReplyAsComment) {
-            await context.reddit.submitComment({
-                id: event.comment.id,
-                text: message,
-            });
-            logger.info(
-                `${event.comment.id}: Public comment reply left in reply to ${event.author.name}`
-            );
-        }
+    if (notify === PointAwardedReplyOptions.ReplyByPM) {
+      try {
+        await context.reddit.sendPrivateMessage({
+          to: event.author.name,
+          subject: `Point Awarded in r/${event.subreddit.name}`,
+          text: message,
+        });
+        logger.info(`PM sent to ${event.author.name}`);
+      } catch (err) {
+        logger.warn(`Failed to send PM to ${event.author.name}`, { err });
+      }
+    } else if (notify === PointAwardedReplyOptions.ReplyAsComment) {
+      await context.reddit.submitComment({
+        id: event.comment.id,
+        text: message,
+      });
+      logger.info(`Comment reply sent to ${event.author.name}`);
     }
+  }
 
-    // ⬇️ Trigger leaderboard update immediately after awarding a point
-    await updateLeaderboard(
-        {
-            name: "manual-update", // or appropriate event name string
-            data: { reason: "Point awarded" },
-        },
-        context as unknown as Context
-    );
+  await updateLeaderboard(
+    {
+      name: "manual-update",
+      data: { reason: "Point awarded" },
+    },
+    context as unknown as Context
+  );
 }
 
 function leaderboardKey(timeframe: string): string {
@@ -713,137 +397,95 @@ function expirationFor(timeframe: string): Date {
 }
 
 export async function updateLeaderboard(
-    event: ScheduledJobEvent<JSONObject | undefined>,
-    context: Context
+  event: ScheduledJobEvent<JSONObject | undefined>,
+  context: Context
 ) {
-    logger.info("Leaderboard update job started.");
+  logger.info("Leaderboard update job started.");
 
-    const settings = await context.settings.getAll();
-    logger.debug("Leaderboard: Settings loaded", settings);
+  const settings = await context.settings.getAll();
+  logger.debug("Leaderboard: Settings loaded", settings);
 
-    const leaderboardMode = settings[AppSetting.LeaderboardMode] as
-        | string[]
-        | undefined;
-    if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) {
-        logger.info("Leaderboard mode is OFF. Exiting.");
-        return;
-    }
+  // Normalize LeaderboardMode
+  const rawMode = settings[AppSetting.LeaderboardMode];
+  const leaderboardMode = Array.isArray(rawMode) ? rawMode[0] : rawMode ?? LeaderboardMode.Off;
 
-    const wikiPageName = settings[AppSetting.LeaderboardWikiPage] as
-        | string
-        | undefined;
-    if (!wikiPageName) {
-        logger.warn("No wiki page name configured. Exiting.");
-        return;
-    }
+  if (leaderboardMode === LeaderboardMode.Off) {
+    logger.info("Leaderboard mode is OFF. Exiting.");
+    return;
+  }
 
-    const leaderboardSize =
-        (settings[AppSetting.LeaderboardSize] as number) ?? 10;
-    const pointName = (settings[AppSetting.PointName] as string) ?? "point";
-    const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
+  const wikiPageName = (settings[AppSetting.ScoreboardLink] as string | undefined) ?? "leaderboards";
+  if (!wikiPageName.trim()) {
+    logger.warn("No wiki page name configured. Exiting.");
+    return;
+  }
 
-    const subredditName = await getSubredditName(context);
-    if (!subredditName) {
-        logger.error("Could not determine subreddit name.");
-        return;
-    }
+  const leaderboardSize = (settings[AppSetting.LeaderboardSize] as number) ?? 10;
+  const pointName = (settings[AppSetting.PointName] as string) ?? "point";
+  const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
 
-    const now = new Date();
-    const formattedDate = format(now, "MM/dd/yyyy HH:mm:ss");
-    logger.debug("Updating leaderboard", { subredditName, formattedDate });
+  const subredditName = await getSubredditName(context);
+  if (!subredditName) {
+    logger.error("Could not determine subreddit name.");
+    return;
+  }
 
-    let markdown = `# Leaderboards for r/${subredditName}\n`;
+  const now = new Date();
+  const formattedDate = format(now, "MM/dd/yyyy HH:mm:ss");
+  logger.debug("Updating leaderboard", { subredditName, formattedDate });
 
-    const helpPage = settings[AppSetting.LeaderboardHelpPage] as
-        | string
-        | undefined;
-    if (helpPage) {
-        markdown += `*See [how the ${pointName}s system works](https://www.reddit.com/r/${subredditName}/wiki/${helpPage})*\n\n`;
-    }
+  let markdown = `# Leaderboards for r/${subredditName}\n`;
 
-    async function getTopScores(key: string, leaderboardSize: number) {
-        const zRangeResults = await context.redis.zRange(
-            key,
-            0,
-            leaderboardSize - 1,
-            {
-                reverse: true,
-                by: "rank",
-                limit: {
-                    offset: 0,
-                    count: leaderboardSize,
-                },
-            }
-        );
+  const helpPage = settings[AppSetting.LeaderboardHelpPage] as string | undefined;
+  if (helpPage?.trim()) {
+    markdown += `*See [how the ${pointName}s system works](https://www.reddit.com/r/${subredditName}/wiki/${helpPage})*\n\n`;
+  }
 
-        const entries: { member: string; score: number }[] = [];
-        for (const result of zRangeResults) {
-            entries.push({ member: result.member, score: result.score });
-        }
-
-        return entries;
-    }
-
-    function formatLeaderboardSection(
-        title: string,
-        entries: { member: string; score: number }[]
-    ) {
-        let text = `## ${title}\n\n| Rank | User | ${pointName}${
-            pointName.endsWith("s") ? "" : "s"
-        } ${pointSymbol}|\n|:-|:-|:-:|\n`;
-        entries.forEach((entry, i) => {
-            const rank = i + 1;
-            const userMarkdown = `u/${entry.member}`;
-            text += `| ${rank} | ${userMarkdown} | ${entry.score} |\n`;
-        });
-        text += "\n";
-        return text;
-    }
-
-    const allTimeEntries = await getTopScores(
-        leaderboardKey("alltime"),
-        leaderboardSize
-    );
-    markdown += formatLeaderboardSection(
-        "All-Time Leaderboard",
-        allTimeEntries
-    );
-
-    const dailyEntries = await getTopScores(
-        leaderboardKey("daily"),
-        leaderboardSize
-    );
-    markdown += formatLeaderboardSection("Daily Leaderboard", dailyEntries);
-
-    const weeklyEntries = await getTopScores(
-        leaderboardKey("weekly"),
-        leaderboardSize
-    );
-    markdown += formatLeaderboardSection("Weekly Leaderboard", weeklyEntries);
-
-    const monthlyEntries = await getTopScores(
-        leaderboardKey("monthly"),
-        leaderboardSize
-    );
-    markdown += formatLeaderboardSection("Monthly Leaderboard", monthlyEntries);
-
-    const yearlyEntries = await getTopScores(
-        leaderboardKey("yearly"),
-        leaderboardSize
-    );
-    markdown += formatLeaderboardSection("Yearly Leaderboard", yearlyEntries);
-
+  async function getTopScores(key: string, size: number) {
     try {
-        await context.reddit.updateWikiPage({
-            subredditName,
-            page: wikiPageName,
-            content: markdown,
-            reason: `Automated leaderboard update at ${formattedDate}`,
-        });
-        logger.info("Leaderboard updated successfully.");
-    } catch (error) {
-        logger.error("Failed to update leaderboard wiki page:", { error });
+      const zRangeResults = await context.redis.zRange(key, 0, size - 1, {
+        reverse: true,
+        by: "score",
+      });
+
+      return zRangeResults.map((r) => ({
+        member: r.member,
+        score: r.score,
+      }));
+    } catch (err) {
+      logger.error(`Failed to fetch scores for ${key}`, { err });
+      return [];
     }
+  }
+
+  function formatLeaderboardSection(
+    title: string,
+    entries: { member: string; score: number }[]
+  ) {
+    let text = `## ${title}\n\n| Rank | User | ${pointName}${pointName.endsWith("s") ? "" : "s"} ${pointSymbol}|\n|:-|:-|:-:|\n`;
+    entries.forEach((entry, i) => {
+      text += `| ${i + 1} | u/${entry.member} | ${entry.score} |\n`;
+    });
+    return text + "\n";
+  }
+
+  for (const timeframe of TIMEFRAMES) {
+    const entries = await getTopScores(leaderboardKey(timeframe), leaderboardSize);
+    const title = timeframe[0].toUpperCase() + timeframe.slice(1) + " Leaderboard";
+    markdown += formatLeaderboardSection(title, entries);
+  }
+
+  try {
+    await context.reddit.updateWikiPage({
+      subredditName,
+      page: wikiPageName,
+      content: markdown,
+      reason: `Automated leaderboard update at ${formattedDate}`,
+    });
+    logger.info("Leaderboard updated successfully.");
+  } catch (error) {
+    logger.error("Failed to update leaderboard wiki page:", { error });
+  }
 }
 
 export async function handleManualPointSetting(

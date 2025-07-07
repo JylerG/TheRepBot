@@ -24,7 +24,8 @@ export async function updateLeaderboard(context: TriggerContext): Promise<void> 
     const subredditName = context.subredditName ?? await context.reddit.getCurrentSubreddit().then(s => s.name);
     const pointName = settings[AppSetting.PointName] as string ?? "point";
     const pointSymbol = settings[AppSetting.PointSymbol] as string ?? "";
-    const leaderboardWiki = settings[AppSetting.LeaderboardWikiPage] as string ?? "leaderboard";
+    const scoreboardWiki = settings[AppSetting.ScoreboardLink] as string ?? `leaderboards`;
+
 
     const leaderboardSize = Number(settings[AppSetting.LeaderboardSize]) || MaxLeaderBoardEntries;
 
@@ -63,9 +64,9 @@ export async function updateLeaderboard(context: TriggerContext): Promise<void> 
 
     await context.reddit.updateWikiPage({
         subredditName,
-        page: leaderboardWiki,
+        page: scoreboardWiki,
         content: markdown,
-        reason: `Updated leaderboard on ${formattedDate}`,
+        reason: `Updated scoreboard on ${formattedDate}`,
     });
 }
 

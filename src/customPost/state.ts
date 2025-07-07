@@ -67,7 +67,7 @@ export class LeaderboardState {
 
     async fetchLeaderboard () {
         const leaderboard: LeaderboardEntry[] = [];
-        const items = await this.context.redis.zRange(POINTS_STORE_KEY, 0, this.leaderboardSize[0] - 1, { by: "rank", reverse: true });
+        const items = await this.context.redis.zRange(POINTS_STORE_KEY, 0, this.leaderboardSize[0] - 1, { by: "score", reverse: true });
         let rank = 1;
         for (const item of items) {
             leaderboard.push({

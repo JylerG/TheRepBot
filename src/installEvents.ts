@@ -14,10 +14,10 @@ export async function onAppInstallOrSettingsUpdate(context: TriggerContext) {
   const settings = await context.settings.getAll();
 
   const subredditName = context.subredditId ?? "defaultSubreddit";
-  const leaderboardWikiPage =
-    (settings[AppSetting.LeaderboardWikiPage] as string) ?? "leaderboard";
+  const scoreboardWikiPage =
+    (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
 
-  const scoreboardLink = `https://www.reddit.com/r/${subredditName}/wiki/${leaderboardWikiPage}`;
+  const scoreboardLink = `${scoreboardWikiPage}`;
 
   await context.redis.set(AppSetting.ScoreboardLink, scoreboardLink);
 
