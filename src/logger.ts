@@ -10,22 +10,22 @@ export enum LogLevel {
   DEBUG = "DEBUG",
 }
 
-// Determine environment
+// Environment config
 const IS_DEV = process.env.NODE_ENV === "development";
-const IS_DEVVIT = process.env.DEVVIT_ENV === "production"; // Optional, based on deployment metadata
+const IS_DEVVIT = process.env.DEVVIT_ENV === "production";
 const ENABLE_FILE_LOGGING = IS_DEV && !IS_DEVVIT;
 
-// Optional file logging for local development only
+// Log file path (for local dev)
 const dataDir = path.resolve("data");
 const LOG_FILE = path.join(dataDir, "bot.log");
 
 function ensureLogDirExists(): void {
-  try {
-    if (!fs.existsSync(dataDir)) {
+  if (!fs.existsSync(dataDir)) {
+    try {
       fs.mkdirSync(dataDir, { recursive: true });
+    } catch (err) {
+      console.error("Logger: Failed to create log directory:", err);
     }
-  } catch (err) {
-    console.error("Logger: Failed to create log directory:", err);
   }
 }
 
@@ -41,22 +41,17 @@ function writeToFile(message: string): void {
 
 function formatMessage(level: LogLevel, message: string, context?: Record<string, any>): string {
   const timestamp = new Date().toISOString();
-  const ctxStr = context ? ` ${JSON.stringify(context, null, 2)}` : "";
-  return `[${timestamp}] [${level}] ${message}${ctxStr}`;
+  const contextString = context ? ` ${JSON.stringify(context, null, 2)}` : "";
+  return `[${timestamp}] [${level}] ${message}${contextString}`;
 }
 
-function colorize(level: LogLevel, msg: string): string {
+function colorize(level: LogLevel, message: string): string {
   switch (level) {
-    case LogLevel.INFO:
-      return chalk.blue(msg);
-    case LogLevel.WARN:
-      return chalk.yellow(msg);
-    case LogLevel.ERROR:
-      return chalk.red(msg);
-    case LogLevel.DEBUG:
-      return chalk.gray(msg);
-    default:
-      return msg;
+    case LogLevel.INFO: return chalk.blue(message);
+    case LogLevel.WARN: return chalk.yellow(message);
+    case LogLevel.ERROR: return chalk.red(message);
+    case LogLevel.DEBUG: return chalk.gray(message);
+    default: return message;
   }
 }
 
@@ -73,20 +68,40 @@ async function sendModPM(context: TriggerContext, message: string): Promise<void
   }
 }
 
+function logToConsole(level: LogLevel, coloredMsg: string): void {
+  switch (level) {
+    case LogLevel.INFO:
+    case LogLevel.DEBUG:
+      console.info(coloredMsg);
+      break;
+    case LogLevel.WARN:
+      console.warn(coloredMsg);
+      break;
+    case LogLevel.ERROR:
+      console.error(coloredMsg);
+      break;
+    default:
+      console.info(coloredMsg);
+  }
+}
+
 export const logger = {
   info: (message: string, context?: Record<string, any>) => {
     const msg = formatMessage(LogLevel.INFO, message, context);
-    console.log(colorize(LogLevel.INFO, msg));
+    const colored = colorize(LogLevel.INFO, msg);
+    logToConsole(LogLevel.INFO, colored);
     writeToFile(msg);
   },
   warn: (message: string, context?: Record<string, any>) => {
     const msg = formatMessage(LogLevel.WARN, message, context);
-    console.warn(colorize(LogLevel.WARN, msg));
+    const colored = colorize(LogLevel.WARN, msg);
+    logToConsole(LogLevel.WARN, colored);
     writeToFile(msg);
   },
   debug: (message: string, context?: Record<string, any>) => {
     const msg = formatMessage(LogLevel.DEBUG, message, context);
-    console.debug(colorize(LogLevel.DEBUG, msg));
+    const colored = colorize(LogLevel.DEBUG, msg);
+    logToConsole(LogLevel.DEBUG, colored); // ✅ was console.debug
     writeToFile(msg);
   },
   error: async (
@@ -95,7 +110,8 @@ export const logger = {
     devvitContext?: TriggerContext
   ) => {
     const msg = formatMessage(LogLevel.ERROR, message, context);
-    console.error(colorize(LogLevel.ERROR, msg));
+    const colored = colorize(LogLevel.ERROR, msg);
+    logToConsole(LogLevel.ERROR, colored);
     writeToFile(msg);
     if (devvitContext) {
       await sendModPM(devvitContext, msg);

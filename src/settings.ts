@@ -6,7 +6,6 @@ import {
     TriggerContext,
 } from "@devvit/public-api";
 import { VALIDATE_REGEX_JOB } from "./constants.js";
-import pluralize from "pluralize";
 
 export enum ExistingFlairOverwriteHandling {
     OverwriteNumeric = "overwritenumeric",
@@ -37,7 +36,6 @@ export enum AppSetting {
     CSSClass = "thanksCSSClass",
     FlairTemplate = "thanksFlairTemplate",
     NotifyOnError = "notifyOnError",
-    NotifyOnErrorTemplate = "notifyOnErrorTemplate",
     NotifyOnSuccess = "notifyOnSuccess",
     NotifyOnSuccessTemplate = "notifyOnSuccessTemplate",
     NotifyAwardedUser = "notifyAwardedUser",
@@ -72,10 +70,12 @@ export enum AppSetting {
     ApprovedOnlyDisallowedMessage = "approvedOnlyDisallowedMessage",
     AllowUnflairedPosts = "allowUnflairedPosts",
     UnflairedPostMessage = "unflairedPostMessage",
-    OPOnlyDisallowedMessage = "OPOnlyDisallowedMessage",
+    OPOnlyDisallowedMessage = "opOnlyDisallowedMessage",
+    PointAlreadyAwardedMessage = "pointAlreadyAwardedMessage",
 }
 
 export enum TemplateDefaults {
+    NotifyOnPointAlreadyAwardedTemplate = "You have already awarded this comment a {{name}}.",
     LeaderboardHelpPageMessage = "You can find out how to use the leaderboard here: {{help}}",
     DisallowedFlairMessage = "Points cannot be awarded on posts with this flair. Please choose another post.",
     UsersWhoCannotAwardPointsMessage = "You do not have permission to award points.",
@@ -86,9 +86,9 @@ export enum TemplateDefaults {
     BotAwardMessage = "You can't award the bot a {name}.",
     UsersWhoCannotBeAwardedPointsMessage = "The user you are trying to award points to is not allowed to be awarded points. Please contact the moderators if you have any questions.",
     InvalidPostMessage = "Points cannot be awarded on this post because the recipient is suspended or shadowbanned.",
-    NotifyOnErrorTemplate = "Hello {{awarder}},\n\nYou cannot award a point to yourself.\n\nPlease contact the mods if you have any questions.\n\n---\n\n^(I am a bot)",
+    NotifyOnSelfAwardTemplate = "Hello {{awarder}},\n\nYou cannot award a point to yourself.\n\nPlease contact the mods if you have any questions.",
     NotifyOnSuccessTemplate = "+1 {point} to u/{{awardee}}.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
-    NotifyAwardedUserTemplate = "Hello {{awardee}},\n\nYou have been awarded a point for your contribution! New score: {{score}}\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
+    NotifyAwardedUserTemplate = "Hello {{awardee}},\n\nYou have been awarded a point for your contribution! New score: {{score}}",
     NotifyOnSuperuserTemplate = 'Hello {{awardee}},\n\nNow that you have reached {{threshold}} points you can now award points yourself, even if normal users do not have permission to. Please use the command "{{command}}" if you\'d like to do this.',
 }
 
@@ -401,7 +401,7 @@ export const appSettings: SettingsFormField[] = [
             {
                 name: AppSetting.NotifyOnAutoSuperuserTemplate,
                 type: "paragraph",
-                label: "Template of message sent when a user reaches the trusted user threshold",
+                label: "Message sent when a user reaches the trusted user threshold",
                 helpText:
                     "Placeholder supported: {{awarder}}, {{permalink}}, {{threshold}}, {{command}}",
                 defaultValue: TemplateDefaults.NotifyOnSuperuserTemplate,
@@ -416,12 +416,19 @@ export const appSettings: SettingsFormField[] = [
                     "+1 {{name}} awarded to u/{{awardee}} by u/{{awarder}}. Total: {{total}}{{symbol}}. Scoreboard is located [here]({{scoreboard}})",
             },
             {
+                name:AppSetting.PointAlreadyAwardedMessage,
+                type: "paragraph",
+                label: "Point Already Awarded Message",
+                helpText: "Message sent when a user tries to award a point, but they have already awarded one. You can use {{name}} to get the name of the point.",
+                defaultValue: TemplateDefaults.NotifyOnPointAlreadyAwardedTemplate,
+            },
+            {
                 type: "string",
                 name: AppSetting.SelfAwardMessage,
                 label: "Self Award Message",
                 helpText:
                     "Shown when someone tries to award themselves. You can use {{name}} to get the name of the point.",
-                defaultValue: "You can't award yourself a {{name}}.",
+                defaultValue: TemplateDefaults.NotifyOnSelfAwardTemplate,
             },
             {
                 type: "string",

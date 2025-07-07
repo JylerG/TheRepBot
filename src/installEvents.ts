@@ -3,6 +3,7 @@ import { AppInstall, AppUpgrade } from "@devvit/protos";
 import { populateCleanupLogAndScheduleCleanup } from "./cleanupTasks.js";
 import { CLEANUP_JOB, CLEANUP_JOB_CRON } from "./constants.js";
 import { AppSetting } from "./settings.js";
+import { logger } from "./logger.js";
 
 export async function onAppFirstInstall (_: AppInstall, context: TriggerContext) {
     await context.redis.set("InstallDate", new Date().getTime().toString());
@@ -21,7 +22,7 @@ export async function onAppInstallOrSettingsUpdate(context: TriggerContext) {
 
   await context.redis.set(AppSetting.ScoreboardLink, scoreboardLink);
 
-  console.log("Scoreboard link set to:", scoreboardLink);
+  logger.info(`Scoreboard link set to: ${scoreboardLink}`);
 }
 
 export async function onAppInstallOrUpgrade (_: AppInstall | AppUpgrade, context: TriggerContext) {

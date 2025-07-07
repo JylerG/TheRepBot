@@ -11,12 +11,12 @@ import {
 import { CommentSubmit, CommentUpdate } from "@devvit/protos";
 import { getSubredditName, isModerator, replaceAll } from "./utility.js";
 import { addWeeks, format } from "date-fns";
-
 import {
     ExistingFlairOverwriteHandling,
     AppSetting,
     PointAwardedReplyOptions,
     NotifyOnErrorReplyOptions,
+    TemplateDefaults,
 } from "./settings.js";
 import { setCleanupForUsers } from "./cleanupTasks.js";
 import { isLinkId } from "@devvit/shared-types/tid.js";
@@ -201,18 +201,61 @@ export async function handleThanksEvent(
     event: CommentSubmit | CommentUpdate,
     context: TriggerContext
 ) {
-    if (!event.comment || !event.post || !event.author || !event.subreddit)
-        return;
+    logger.debug("✅ Event triggered", {
+        commentId: event.comment?.id,
+        postId: event.post?.id,
+        author: event.author?.name,
+        subreddit: event.subreddit?.name,
+    });
 
-    if (isLinkId(event.comment.parentId)) return;
-
-    if (
-        event.author.name === context.appName ||
-        event.author.name === "AutoModerator"
-    )
+    if (!event.comment || !event.post || !event.author || !event.subreddit) {
+        logger.warn("❌ Missing comment, post, author, or subreddit");
         return;
+    }
+
+    if (isLinkId(event.comment.parentId)) {
+        logger.debug("❌ Parent ID is a link — ignoring.");
+        return;
+    }
 
     const settings = await context.settings.getAll();
+
+    // Parse command settings first
+    const userCommandVal = settings[AppSetting.PointTriggerWords] as string;
+    const userCommandList =
+        userCommandVal?.split("\n").map((cmd) => cmd.toLowerCase().trim()) ??
+        [];
+    const modCommand = settings[AppSetting.ModAwardCommand] as
+        | string
+        | undefined;
+
+    // Combine all trigger commands
+    const allCommands = [...userCommandList];
+    if (modCommand) allCommands.push(modCommand.toLowerCase().trim());
+
+    const commentBody = event.comment?.body.toLowerCase() ?? "";
+
+    // If author is system (bot or AutoModerator) AND comment contains a command, block it
+    const isSystemAuthor =
+        event.author.name === context.appName ||
+        event.author.name === "AutoModerator";
+
+    const commentContainsCommand = allCommands.some((cmd) =>
+        commentBody.includes(cmd)
+    );
+
+    if (isSystemAuthor && commentContainsCommand) {
+        logger.debug(
+            "❌ Author is bot or AutoModerator AND used a command — ignoring.",
+            {
+                author: event.author.name,
+                appName: context.appName,
+                commentBody,
+                allCommands,
+            }
+        );
+        return;
+    }
 
     const accessControl =
         ((settings[AppSetting.AccessControl] as string[]) ?? [])[0] ??
@@ -247,27 +290,26 @@ export async function handleThanksEvent(
             break;
     }
 
+    logger.debug("✅ Permission Check", {
+        accessControl,
+        isMod,
+        isApprovedUser,
+        isOP,
+        hasPermission,
+    });
+
     if (!hasPermission) {
+        logger.warn("❌ Author does not have permission");
         return;
     }
 
-    const userCommandVal = settings[AppSetting.PointTriggerWords] as
-        | string
-        | undefined;
-    const userCommandList =
-        userCommandVal?.split("\n").map((cmd) => cmd.toLowerCase().trim()) ??
-        [];
-    const modCommand = settings[AppSetting.ModAwardCommand] as
-        | string
-        | undefined;
-
-    let containsUserCommand: boolean;
+    let containsUserCommand = false;
     if (settings[AppSetting.ThanksCommandUsesRegex]) {
         const regexes = userCommandList.map(
             (command) => new RegExp(command, "i")
         );
         containsUserCommand = regexes.some((regex) =>
-            regex.test(event.comment?.body ?? "")
+            event.comment ? regex.test(event.comment.body) : false
         );
     } else {
         containsUserCommand = userCommandList.some((command) =>
@@ -281,16 +323,157 @@ export async function handleThanksEvent(
             .toLowerCase()
             .includes(modCommand.toLowerCase().trim());
 
-    if (!containsUserCommand && !containsModCommand) return;
+    logger.debug("✅ Command check", {
+        containsUserCommand,
+        containsModCommand,
+        commentBody: event.comment.body,
+    });
+
+    if (!containsUserCommand && !containsModCommand) {
+        logger.debug("❌ No matching command found");
+        return;
+    }
 
     const parentComment = await context.reddit.getCommentById(
         event.comment.parentId
     );
-    if (!parentComment || parentComment.authorName === event.author.name)
+    if (!parentComment) {
+        logger.warn("❌ Could not fetch parent comment");
         return;
+    }
+
+    if (parentComment.authorName === event.author.name) {
+        logger.warn("❌ Author is trying to award themselves");
+
+        const rawNotifyError =
+            ((settings[AppSetting.NotifyOnError] as string[]) ?? [])[0] ??
+            "none";
+        const notifyOnError: NotifyOnErrorReplyOptions = Object.values(
+            NotifyOnErrorReplyOptions
+        ).includes(rawNotifyError as NotifyOnErrorReplyOptions)
+            ? (rawNotifyError as NotifyOnErrorReplyOptions)
+            : NotifyOnErrorReplyOptions.NoReply;
+
+        const pointName = (settings[AppSetting.PointName] as string) ?? "point";
+
+        const template =
+            (settings[AppSetting.SelfAwardMessage] as string) ??
+            TemplateDefaults.NotifyOnSelfAwardTemplate;
+
+        const message = template
+            .replace("{{awarder}}", event.author.name)
+            .replace("{{name}}", pointName);
+
+        if (notifyOnError === NotifyOnErrorReplyOptions.ReplyByPM) {
+            try {
+                await context.reddit.sendPrivateMessage({
+                    to: event.author.name,
+                    subject: `Cannot Award ${pointName}`,
+                    text: message,
+                });
+                logger.info("⚠️ Self-award PM sent");
+            } catch (e) {
+                logger.warn("❌ Failed to send self-award PM", { e });
+            }
+        } else if (notifyOnError === NotifyOnErrorReplyOptions.ReplyAsComment) {
+            try {
+                await context.reddit.submitComment({
+                    id: event.comment.id,
+                    text: message,
+                });
+                logger.info("⚠️ Self-award comment sent");
+            } catch (e) {
+                logger.warn("❌ Failed to send self-award comment", { e });
+            }
+        }
+
+        return;
+    }
+
+    // Check if the awarder has already awarded this specific comment
+    const redisKey = `thanks-${parentComment.id}-${event.author.name}`;
+    const alreadyAwarded = await context.redis.exists(redisKey);
+    if (alreadyAwarded) {
+        logger.info(
+            "❌ Awarder has already awarded this comment before, ignoring.",
+            {
+                awarder: event.author.name,
+                commentId: parentComment.id,
+            }
+        );
+
+        const rawNotify =
+            ((settings[AppSetting.NotifyOnError] as string[]) ?? [])[0] ??
+            "none";
+        const notify: NotifyOnErrorReplyOptions = Object.values(
+            NotifyOnErrorReplyOptions
+        ).includes(rawNotify as NotifyOnErrorReplyOptions)
+            ? (rawNotify as NotifyOnErrorReplyOptions)
+            : NotifyOnErrorReplyOptions.NoReply;
+
+        const alreadyAwardedMessage = replaceAll(
+            (settings[AppSetting.PointAlreadyAwardedMessage] as string) ??
+                TemplateDefaults.NotifyOnPointAlreadyAwardedTemplate,
+            "{{name}}",
+            AppSetting.PointName
+        );
+
+        const fallbackMessage = `⚠️ u/${event.author.name}, ${alreadyAwardedMessage}`;
+
+        try {
+            if (notify === NotifyOnErrorReplyOptions.ReplyByPM) {
+                await context.reddit.sendPrivateMessage({
+                    to: event.author.name,
+                    subject: `Point Already Awarded in r/${event.subreddit.name}`,
+                    text: alreadyAwardedMessage,
+                });
+                logger.info("⚠️ Already-awarded PM sent");
+            } else if (notify === NotifyOnErrorReplyOptions.ReplyAsComment) {
+                await context.reddit.submitComment({
+                    id: event.comment.id,
+                    text: alreadyAwardedMessage,
+                });
+                logger.info("⚠️ Already-awarded comment reply sent");
+            }
+        } catch (e) {
+            logger.warn(
+                "⚠️ Failed to deliver already-awarded notification, trying fallback...",
+                { e }
+            );
+
+            try {
+                if (notify === NotifyOnErrorReplyOptions.ReplyByPM) {
+                    await context.reddit.sendPrivateMessage({
+                        to: event.author.name,
+                        subject: `Point Already Awarded in r/${event.subreddit.name}`,
+                        text: fallbackMessage,
+                    });
+                } else if (
+                    notify === NotifyOnErrorReplyOptions.ReplyAsComment
+                ) {
+                    await context.reddit.submitComment({
+                        id: event.comment.id,
+                        text: fallbackMessage,
+                    });
+                }
+            } catch (fallbackError) {
+                logger.error(
+                    "❌ Failed to send fallback notification for already-awarded attempt",
+                    {
+                        fallbackError,
+                    }
+                );
+            }
+        }
+
+        return;
+    }
 
     const parentUser = await parentComment.getAuthor();
-    if (!parentUser) return;
+    if (!parentUser) {
+        logger.warn("❌ Could not fetch parent user");
+        return;
+    }
 
     const { currentScore, flairScoreIsNaN } = await getCurrentScore(
         parentUser,
@@ -298,6 +481,13 @@ export async function handleThanksEvent(
         settings
     );
     const newScore = currentScore + 1;
+
+    logger.info("✅ Awarding point", {
+        awarder: event.author.name,
+        awardee: parentComment.authorName,
+        previousScore: currentScore,
+        newScore,
+    });
 
     await setUserScore(
         parentComment.authorName,
@@ -307,17 +497,14 @@ export async function handleThanksEvent(
         settings
     );
 
-    await context.redis.set(
-        `thanks-${parentComment.id}-${event.author.name}`,
-        Date.now().toString(),
-        {
-            expiration: addWeeks(new Date(), 1),
-        }
-    );
+    await context.redis.set(redisKey, Date.now().toString(), {
+        expiration: addWeeks(new Date(), 1),
+    });
+    logger.debug("✅ Redis flag set", { redisKey });
 
+    // Handle notification logic
     const rawNotifySuccess =
         ((settings[AppSetting.NotifyOnSuccess] as string[]) ?? [])[0] ?? "none";
-
     const notifyAwarded: PointAwardedReplyOptions = Object.values(
         PointAwardedReplyOptions
     ).includes(rawNotifySuccess as PointAwardedReplyOptions)
@@ -325,18 +512,14 @@ export async function handleThanksEvent(
         : PointAwardedReplyOptions.NoReply;
 
     if (notifyAwarded !== PointAwardedReplyOptions.NoReply) {
-        const scoreboardLink = settings[AppSetting.ScoreboardLink] as
-            | string
-            | undefined;
         const pointName = (settings[AppSetting.PointName] as string) ?? "point";
         const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
         const successTemplate =
             (settings[AppSetting.SuccessMessage] as string) ??
             "+1 {{name}} awarded to u/{{awardee}} by u/{{awarder}}. Total: {{total}}{{symbol}}. Scoreboard is located [here]({{scoreboard}})";
-
         const scoreboard = `https://www.reddit.com/r/${
             event.subreddit.name
-        }/wiki/${scoreboardLink ?? "leaderboard"}`;
+        }/wiki/${settings[AppSetting.ScoreboardLink] ?? "leaderboard"}`;
 
         const message = formatMessage(successTemplate, {
             awardee: parentComment.authorName,
@@ -356,107 +539,58 @@ export async function handleThanksEvent(
             ? (rawNotifyError as NotifyOnErrorReplyOptions)
             : NotifyOnErrorReplyOptions.NoReply;
 
-        if (notifyAwarded === PointAwardedReplyOptions.ReplyByPM) {
-            try {
+        try {
+            if (notifyAwarded === PointAwardedReplyOptions.ReplyByPM) {
                 await context.reddit.sendPrivateMessage({
                     to: event.author.name,
                     subject: `Point Awarded in r/${event.subreddit.name}`,
                     text: message,
                 });
-                logger.info(`PM sent to ${event.author.name}: ${message}`);
-            } catch (err) {
-                logger.error(
-                    `Error trying to send a PM to ${event.author.name}:`,
-                    { err }
-                );
-
-                const errorMsg = `Sorry u/${event.author.name}, we couldn't send you a PM notification. Please check your settings or try again later.`;
-
-                if (
-                    notifyOnError === NotifyOnErrorReplyOptions.ReplyAsComment
-                ) {
-                    await context.reddit.submitComment({
-                        id: event.comment.id,
-                        text: errorMsg,
-                    });
-                    logger.warn(
-                        `Error PM fallback comment sent to u/${event.author.name}`
-                    );
-                } else if (
-                    notifyOnError === NotifyOnErrorReplyOptions.ReplyByPM
-                ) {
-                    try {
-                        await context.reddit.sendPrivateMessage({
-                            to: event.author.name,
-                            subject: `Notification Delivery Failed`,
-                            text: errorMsg,
-                        });
-                        logger.warn(
-                            `Fallback PM sent to u/${event.author.name}`
-                        );
-                    } catch (e) {
-                        logger.error(`Failed to deliver fallback error PM:`, {
-                            e,
-                        });
-                    }
-                }
-            }
-        } else if (notifyAwarded === PointAwardedReplyOptions.ReplyAsComment) {
-            try {
+                logger.info(`✅ PM sent to u/${event.author.name}`);
+            } else if (
+                notifyAwarded === PointAwardedReplyOptions.ReplyAsComment
+            ) {
                 await context.reddit.submitComment({
                     id: event.comment.id,
                     text: message,
                 });
-                logger.info(
-                    `Comment sent in response to ${event.comment.id}: ${message}`
-                );
-            } catch (err) {
-                logger.error(
-                    `Error trying to send a comment in response to ${event.comment.id}:`,
-                    { err }
-                );
+                logger.info(`✅ Comment reply sent to u/${event.author.name}`);
+            }
+        } catch (err) {
+            logger.error("❌ Notification failed", { err });
 
-                const errorMsg = `Sorry u/${event.author.name}, we couldn't reply with your point notification due to a Reddit error.`;
-
-                if (
+            const fallback = `⚠️ u/${event.author.name}, we were unable to send your notification.\n\n${message}`;
+            try {
+                if (notifyOnError === NotifyOnErrorReplyOptions.ReplyByPM) {
+                    await context.reddit.sendPrivateMessage({
+                        to: event.author.name,
+                        subject: "Notification Delivery Failed",
+                        text: fallback,
+                    });
+                    logger.warn("⚠️ Fallback PM sent");
+                } else if (
                     notifyOnError === NotifyOnErrorReplyOptions.ReplyAsComment
                 ) {
                     await context.reddit.submitComment({
                         id: event.comment.id,
-                        text: errorMsg,
+                        text: fallback,
                     });
-                    logger.warn(
-                        `Error reply fallback comment sent to u/${event.author.name}`
-                    );
-                } else if (
-                    notifyOnError === NotifyOnErrorReplyOptions.ReplyByPM
-                ) {
-                    try {
-                        await context.reddit.sendPrivateMessage({
-                            to: event.author.name,
-                            subject: `Notification Delivery Failed`,
-                            text: errorMsg,
-                        });
-                        logger.warn(
-                            `Fallback PM sent to u/${event.author.name}`
-                        );
-                    } catch (e) {
-                        logger.error(`Failed to deliver fallback error PM:`, {
-                            e,
-                        });
-                    }
+                    logger.warn("⚠️ Fallback comment sent");
                 }
+            } catch (e) {
+                logger.error("❌ Fallback delivery also failed", { e });
             }
         }
-
-        await updateLeaderboard(
-            {
-                name: "manual-update",
-                data: { reason: "Point awarded" },
-            },
-            context as unknown as Context
-        );
     }
+
+    await updateLeaderboard(
+        {
+            name: "manual-update",
+            data: { reason: "Point awarded" },
+        },
+        context as unknown as Context
+    );
+    logger.info("✅ Leaderboard updated");
 }
 
 function leaderboardKey(timeframe: string): string {
