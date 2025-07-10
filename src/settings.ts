@@ -73,7 +73,7 @@ export enum AppSetting {
     UnflairedPostMessage = "unflairedPostMessage",
     OPOnlyDisallowedMessage = "opOnlyDisallowedMessage",
     PointAlreadyAwardedMessage = "pointAlreadyAwardedMessage",
-    OnlyShowAllTimeScoreboard = "onlyShowAllTimeScoreboard",
+    // OnlyShowAllTimeScoreboard = "onlyShowAllTimeScoreboard",
 }
 
 export enum TemplateDefaults {
@@ -172,23 +172,24 @@ export const appSettings: SettingsFormField[] = [
         type: "group",
         label: "Point System Settings",
         fields: [
-            {
-                type: "select",
-                name: AppSetting.OnlyShowAllTimeScoreboard,
-                label: "Only Show All Time Leaderboard?",
-                helpText: "Choose whether to show daily, weekly, monthly, yearly, and all time leaderboards. Note that if this is set to false, the multiple leaderboards are currently a WIP.",
-                options: [
-                    {
-                        label: "True",
-                        value: "true",
-                    },
-                    {
-                        label: "False",
-                        value: "false",
-                    },
-                ],
-                defaultValue: ["true"],
-            },
+            //todo: figure out how to properly implement this
+            // {
+            //     type: "select",
+            //     name: AppSetting.OnlyShowAllTimeScoreboard,
+            //     label: "Only Show All Time Leaderboard?",
+            //     helpText: "Choose whether to show daily, weekly, monthly, yearly, and all time leaderboards. Note that if this is set to false, the multiple leaderboards are currently a WIP.",
+            //     options: [
+            //         {
+            //             label: "True",
+            //             value: "true",
+            //         },
+            //         {
+            //             label: "False",
+            //             value: "false",
+            //         },
+            //     ],
+            //     defaultValue: ["true"],
+            // },
             {
                 type: "select",
                 name: AppSetting.AccessControl,

@@ -42,6 +42,10 @@ Data for users is removed from the app within 48 hours from v1.3 onwards.
 This app is open source and licenced under the BSD 3-Clause Licence. You can find the source code on GitHub [here](https://github.com/JylerG/TheRepBot).
 
 ## Version History
+### 0.0.11
+* Fix incorrect version number for 0.0.10
+### 0.0.10
+* Remove daily, weekly, monthly, and yearly leaderboards for now to try and fix it.
 ### 0.0.9
 * Make it so that users can select if they use an all-time leaderboard only or daily, weekly, monthly, yearly, and all-time leaderboards (this part is a WIP).
 ### 0.0.8

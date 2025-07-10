@@ -1,11 +1,12 @@
-import { TriggerContext } from "@devvit/public-api";
+import { TriggerContext, Devvit } from "@devvit/public-api";
 import { AppInstall, AppUpgrade } from "@devvit/protos";
 import { populateCleanupLogAndScheduleCleanup } from "./cleanupTasks.js";
 import { CLEANUP_JOB, CLEANUP_JOB_CRON } from "./constants.js";
 import { AppSetting } from "./settings.js";
 import { logger } from "./logger.js";
-import { Devvit } from "@devvit/public-api";
+import { TIMEFRAMES } from "./leaderboard.js"; // assumes you export ["daily", "weekly", "monthly", "yearly"]
 
+// Handle first-time installation
 export async function onAppFirstInstall(
     _: AppInstall,
     context: TriggerContext
@@ -14,97 +15,92 @@ export async function onAppFirstInstall(
     await onAppInstallOrSettingsUpdate(context);
 }
 
-// Define the scheduled jobs for resetting each leaderboard
-Devvit.addSchedulerJob({
-    name: "reset_daily_leaderboard",
-    onRun: async (_, context) => {
-        await context.redis.zRemRangeByRank("thanksPointsStore:daily", 0, -1);
-    },
-});
-Devvit.addSchedulerJob({
-    name: "reset_weekly_leaderboard",
-    onRun: async (_, context) => {
-        await context.redis.zRemRangeByRank("thanksPointsStore:weekly", 0, -1);
-    },
-});
-Devvit.addSchedulerJob({
-    name: "reset_monthly_leaderboard",
-    onRun: async (_, context) => {
-        await context.redis.zRemRangeByRank("thanksPointsStore:monthly", 0, -1);
-    },
-});
-Devvit.addSchedulerJob({
-    name: "reset_yearly_leaderboard",
-    onRun: async (_, context) => {
-        await context.redis.zRemRangeByRank("thanksPointsStore:yearly", 0, -1);
-    },
-});
-
-// Schedule the jobs on app install or settings update
-export async function onAppInstallOrSettingsUpdate(context: TriggerContext) {
-    const settings = await context.settings.getAll();
-
-    const subredditName = context.subredditId ?? "defaultSubreddit";
-    const scoreboardWikiPage =
-        (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
-
-    const scoreboardLink = `${scoreboardWikiPage}`;
-
-    await context.redis.set(AppSetting.ScoreboardLink, scoreboardLink);
-    logger.info(`Scoreboard link set to: ${scoreboardLink}`);
-
-    // Schedule leaderboard resets
-    await context.scheduler.runJob({
-        name: "reset_daily_leaderboard",
-        cron: "0 0 * * *", // Every day at midnight UTC
-    });
-
-    await context.scheduler.runJob({
-        name: "reset_weekly_leaderboard",
-        cron: "0 0 * * 0", // Every Sunday at midnight UTC (day of week = 0)
-    });
-
-    await context.scheduler.runJob({
-        name: "reset_monthly_leaderboard",
-        cron: "0 0 1 * *", // First day of the month at midnight UTC
-    });
-
-    await context.scheduler.runJob({
-        name: "reset_yearly_leaderboard",
-        cron: "0 0 1 1 *", // January 1st at midnight UTC
+// Register leaderboard reset jobs for each timeframe
+for (const timeframe of TIMEFRAMES) {
+    Devvit.addSchedulerJob({
+        name: `reset_${timeframe}_leaderboard`,
+        onRun: async (_, context) => {
+            await context.redis.zRemRangeByRank(
+                `thanksPointsStore:${timeframe}`,
+                0,
+                -1
+            );
+        },
     });
 }
 
+// Main setup logic on install/upgrade/settings change
+export async function onAppInstallOrSettingsUpdate(context: TriggerContext) {
+    const settings = await context.settings.getAll();
+    const scoreboardWikiPage =
+        (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
+
+    await context.redis.set(AppSetting.ScoreboardLink, scoreboardWikiPage);
+    logger.info(`✅ Scoreboard link set to: ${scoreboardWikiPage}`);
+
+    // Schedule leaderboard resets
+    await context.scheduler.runJob({
+        name: "updateLeaderboard",
+        cron: "0 0 * * *", // Every day at 00:00 UTC
+    });
+
+    await Promise.all(
+        TIMEFRAMES.map((timeframe: string) => {
+            let cron: string | undefined;
+
+            switch (timeframe) {
+                case "daily":
+                    cron = "0 0 * * *";
+                    break;
+                case "weekly":
+                    cron = "0 0 * * 0";
+                    break;
+                case "monthly":
+                    cron = "0 0 1 * *";
+                    break;
+                case "yearly":
+                    cron = "0 0 1 1 *";
+                    break;
+                default:
+                    return; // skip unknown timeframes
+            }
+
+            return context.scheduler.runJob({
+                name: `reset_${timeframe}_leaderboard`,
+                cron,
+            });
+        }).filter(Boolean) // filter out undefined from `.map()` if any
+    );
+}
+
+// Called on install or upgrade
 export async function onAppInstallOrUpgrade(
     _: AppInstall | AppUpgrade,
     context: TriggerContext
 ) {
     const currentJobs = await context.scheduler.listJobs();
-    await onAppInstallOrSettingsUpdate(context);
 
-    // Cancel all existing scheduled jobs
+    // Cancel old jobs
     await Promise.all(
         currentJobs.map((job) => context.scheduler.cancelJob(job.id))
     );
 
-    // Schedule the cleanup job as before
+    // Reconfigure scheduling
+    await onAppInstallOrSettingsUpdate(context);
+
+    // Schedule cleanup job
     await context.scheduler.runJob({
         name: CLEANUP_JOB,
         cron: CLEANUP_JOB_CRON,
     });
 
-    // Schedule the leaderboard update job daily at 00:00 UTC
-    await context.scheduler.runJob({
-        name: "updateLeaderboard",
-        cron: "0 0 * * *", // every day at midnight UTC
-    });
-
+    // Run cleanup logic now
     await populateCleanupLogAndScheduleCleanup(context);
 
-    // Run leaderboard update once immediately after install/upgrade
+    // Trigger an immediate leaderboard update
     await context.scheduler.runJob({
         name: "updateLeaderboard",
         runAt: new Date(),
-        data: { reason: "TheRepBot has been installed or upgraded." },
+        data: { reason: "TheRepBot was installed or upgraded." },
     });
 }
