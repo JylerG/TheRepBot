@@ -8,6 +8,7 @@ import {
 import { VALIDATE_REGEX_JOB } from "./constants.js";
 
 export enum ExistingFlairOverwriteHandling {
+    OverwriteNumericSymbol = "overwritenumericsymbol",
     OverwriteNumeric = "overwritenumeric",
     OverwriteAll = "overwriteall",
     NeverSet = "neverset",
@@ -72,11 +73,12 @@ export enum AppSetting {
     UnflairedPostMessage = "unflairedPostMessage",
     OPOnlyDisallowedMessage = "opOnlyDisallowedMessage",
     PointAlreadyAwardedMessage = "pointAlreadyAwardedMessage",
+    OnlyShowAllTimeScoreboard = "onlyShowAllTimeScoreboard",
 }
 
 export enum TemplateDefaults {
     NotifyOnPointAlreadyAwardedTemplate = "You have already awarded this comment a {{name}}.",
-    LeaderboardHelpPageMessage = "You can find out how to use the leaderboard here: {{help}}",
+    LeaderboardHelpPageMessage = "[How to award points with RepBot.]({{help}})",
     DisallowedFlairMessage = "Points cannot be awarded on posts with this flair. Please choose another post.",
     UsersWhoCannotAwardPointsMessage = "You do not have permission to award points.",
     ModOnlyDisallowedMessage = "Only moderators are allowed to award points.",
@@ -86,7 +88,7 @@ export enum TemplateDefaults {
     BotAwardMessage = "You can't award the bot a {name}.",
     UsersWhoCannotBeAwardedPointsMessage = "The user you are trying to award points to is not allowed to be awarded points. Please contact the moderators if you have any questions.",
     InvalidPostMessage = "Points cannot be awarded on this post because the recipient is suspended or shadowbanned.",
-    NotifyOnSelfAwardTemplate = "Hello {{awarder}},\n\nYou cannot award a point to yourself.\n\nPlease contact the mods if you have any questions.",
+    NotifyOnSelfAwardTemplate = "Hello {{awarder}}, you cannot award a point to yourself.",
     NotifyOnSuccessTemplate = "+1 {point} to u/{{awardee}}.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
     NotifyAwardedUserTemplate = "Hello {{awardee}},\n\nYou have been awarded a point for your contribution! New score: {{score}}",
     NotifyOnSuperuserTemplate = 'Hello {{awardee}},\n\nNow that you have reached {{threshold}} points you can now award points yourself, even if normal users do not have permission to. Please use the command "{{command}}" if you\'d like to do this.',
@@ -172,6 +174,23 @@ export const appSettings: SettingsFormField[] = [
         fields: [
             {
                 type: "select",
+                name: AppSetting.OnlyShowAllTimeScoreboard,
+                label: "Only Show All Time Leaderboard?",
+                helpText: "Choose whether to show daily, weekly, monthly, yearly, and all time leaderboards. Note that if this is set to false, the multiple leaderboards are currently a WIP.",
+                options: [
+                    {
+                        label: "True",
+                        value: "true",
+                    },
+                    {
+                        label: "False",
+                        value: "false",
+                    },
+                ],
+                defaultValue: ["true"],
+            },
+            {
+                type: "select",
                 name: AppSetting.AccessControl,
                 label: "Who Can Award?",
                 helpText: "Choose who is allowed to award points.",
@@ -196,7 +215,7 @@ export const appSettings: SettingsFormField[] = [
                 defaultValue: ["moderators-approved-and-op"],
                 onValidate: selectFieldHasOptionChosen,
             },
-
+        
             {
                 type: "paragraph",
                 name: AppSetting.UsersWhoCannotAwardPoints,
@@ -252,7 +271,7 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.PointName,
                 label: "Point Name",
                 helpText:
-                    "The name shown in award messages, like 'point', 'kudo', etc.",
+                    "Singular form of the name shown in award messages, like 'point', 'kudo', etc.",
                 defaultValue: "point",
             },
             {
@@ -315,9 +334,14 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.ExistingFlairHandling,
                 type: "select",
                 label: "Flair setting option",
+                helpText: "If using a symbol, it must be set in the Point Symbol box.",
                 options: [
                     {
-                        label: "Set flair to new score, if flair unset or flair is numeric",
+                        label: "Set flair to new score, if flair unset or flair is numeric (With Symbol)",
+                        value: ExistingFlairOverwriteHandling.OverwriteNumericSymbol,
+                    },
+                    {
+                        label: "Set flair to new score, if flair unset or flair is numeric (Without Symbol)",
                         value: ExistingFlairOverwriteHandling.OverwriteNumeric,
                     },
                     {
@@ -427,7 +451,7 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.SelfAwardMessage,
                 label: "Self Award Message",
                 helpText:
-                    "Shown when someone tries to award themselves. You can use {{name}} to get the name of the point.",
+                    "Shown when someone tries to award themselves. You can use {{name}} to get the name of the point and {{awarder}} to get the name of the person trying to award themselves.",
                 defaultValue: TemplateDefaults.NotifyOnSelfAwardTemplate,
             },
             {
@@ -551,11 +575,11 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.LeaderboardSize,
                 type: "number",
                 label: "Leaderboard Size",
-                helpText: "Number of users to show on the leaderboard (1-30).",
+                helpText: "Number of users to show on the leaderboard (1-50).",
                 defaultValue: 10,
                 onValidate: ({ value }) => {
-                    if (value !== undefined && (value < 1 || value > 30)) {
-                        return "Value should be between 1 and 30";
+                    if (value !== undefined && (value < 1 || value > 50)) {
+                        return "Value should be between 1 and 50";
                     }
                 },
             },

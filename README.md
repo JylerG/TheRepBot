@@ -42,10 +42,12 @@ Data for users is removed from the app within 48 hours from v1.3 onwards.
 This app is open source and licenced under the BSD 3-Clause Licence. You can find the source code on GitHub [here](https://github.com/JylerG/TheRepBot).
 
 ## Version History
+### 0.0.9
+* Make it so that users can select if they use an all-time leaderboard only or daily, weekly, monthly, yearly, and all-time leaderboards (this part is a WIP).
 ### 0.0.8
 * Make it so the bot can actually send the user messages
 * Improve code for functionality
-* Bot can be awarded by users (Need to remove this capability)
+* Make it so the symbol can be added to a user's flair if a symbol is specified
 ### 0.0.7
 * Fixed a typo in v0.0.6 (used TheRepBot instead of reputatorbot in acknowledgements)
 ### 0.0.6

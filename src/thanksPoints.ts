@@ -27,6 +27,11 @@ import { logger } from "./logger.js";
 export const POINTS_STORE_KEY = "thanksPointsStore";
 const TIMEFRAMES = ["daily", "weekly", "monthly", "yearly", "alltime"] as const;
 
+
+function capitalize(word: string): string {
+    return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
 function formatMessage(
     template: string,
     placeholders: Record<string, string>
@@ -101,16 +106,16 @@ async function setUserScore(
     context: TriggerContext,
     settings: SettingsValues
 ) {
-    // Store the user's new score in Redis sorted set
+    // ✅ Store score in Redis
     await context.redis.zAdd(POINTS_STORE_KEY, {
         member: username,
         score: newScore,
     });
 
-    // Queue user for cleanup checks in 24 hours
+    // ✅ Schedule cleanup
     await setCleanupForUsers([username], context);
 
-    // Queue a leaderboard update job
+    // ✅ Schedule leaderboard job
     await context.scheduler.runJob({
         name: "updateLeaderboard",
         runAt: new Date(),
@@ -119,45 +124,43 @@ async function setUserScore(
         },
     });
 
-    // Handle flair updating according to settings
-    const existingFlairOverwriteHandling = ((settings[
-        AppSetting.ExistingFlairHandling
-    ] as string[] | undefined) ?? [
-        ExistingFlairOverwriteHandling.OverwriteNumeric,
-    ])[0] as ExistingFlairOverwriteHandling;
+    // ✅ Flair handling settings
+    const flairSetting = (
+        (settings[AppSetting.ExistingFlairHandling] as string[] | undefined) ??
+        [ExistingFlairOverwriteHandling.OverwriteNumeric]
+    )[0] as ExistingFlairOverwriteHandling;
 
     const shouldSetUserFlair =
-        existingFlairOverwriteHandling !==
-            ExistingFlairOverwriteHandling.NeverSet &&
+        flairSetting !== ExistingFlairOverwriteHandling.NeverSet &&
         (!flairScoreIsNaN ||
-            existingFlairOverwriteHandling ===
-                ExistingFlairOverwriteHandling.OverwriteAll);
+            flairSetting === ExistingFlairOverwriteHandling.OverwriteAll);
 
-    if (shouldSetUserFlair) {
-        let cssClass = settings[AppSetting.CSSClass] as string | undefined;
-        if (!cssClass) cssClass = undefined;
+    if (!shouldSetUserFlair) return;
 
-        let flairTemplate = settings[AppSetting.FlairTemplate] as
-            | string
-            | undefined;
-        if (!flairTemplate) flairTemplate = undefined;
+    // ✅ Read flair styling preferences
+    let cssClass = settings[AppSetting.CSSClass] as string | undefined;
+    let flairTemplate = settings[AppSetting.FlairTemplate] as string | undefined;
 
-        if (flairTemplate && cssClass) {
-            // Prioritize flair template over CSS class
-            cssClass = undefined;
-        }
+    if (!cssClass) cssClass = undefined;
+    if (!flairTemplate) flairTemplate = undefined;
+    if (cssClass && flairTemplate) cssClass = undefined; // Template takes priority
 
-        const subredditName = await getSubredditName(context);
+    // ✅ Apply symbol if OverwriteNumericSymbol is selected
+    const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
+    const flairText =
+        flairSetting === ExistingFlairOverwriteHandling.OverwriteNumericSymbol
+            ? `${newScore}${pointSymbol}`
+            : `${newScore}`;
 
-        await context.reddit.setUserFlair({
-            subredditName,
-            username,
-            cssClass,
-            flairTemplateId: flairTemplate,
-            text: newScore.toString(),
-        });
-    } else {
-    }
+    const subredditName = await getSubredditName(context);
+
+    await context.reddit.setUserFlair({
+        subredditName,
+        username,
+        cssClass,
+        flairTemplateId: flairTemplate,
+        text: flairText,
+    });
 }
 
 async function getUserIsSuperuser(
@@ -323,14 +326,11 @@ export async function handleThanksEvent(
             .toLowerCase()
             .includes(modCommand.toLowerCase().trim());
 
-    logger.debug("✅ Command check", {
-        containsUserCommand,
-        containsModCommand,
+    logger.info("✅ Awarded Comment", {
         commentBody: event.comment.body,
     });
 
     if (!containsUserCommand && !containsModCommand) {
-        logger.debug("❌ No matching command found");
         return;
     }
 
@@ -554,6 +554,7 @@ export async function handleThanksEvent(
                     id: event.comment.id,
                     text: message,
                 });
+
                 logger.info(`✅ Comment reply sent to u/${event.author.name}`);
             }
         } catch (err) {
@@ -676,7 +677,7 @@ export async function updateLeaderboard(
     const now = new Date();
     const formattedDate = format(now, "MM/dd/yyyy HH:mm:ss");
 
-    let markdown = `# Leaderboards for r/${subredditName}\n`;
+    let markdown = `# ${capitalize(pointName)}boards for r/${subredditName}\n`;
 
     const helpPage = settings[AppSetting.LeaderboardHelpPage] as
         | string
