@@ -31,6 +31,7 @@ export enum AppSetting {
     NotifyOnAutoSuperuser = "notifyOnAutoSuperuser",
     NotifyOnAutoSuperuserTemplate = "notifyOnAutoSuperuserTemplate",
     UsersWhoCannotBeAwardedPoints = "excludedUsers",
+    NotifyUsersWhoCannotAwardPoints = "notifyUsersWhoCannotAwardPoints",
     UsersWhoCannotAwardPoints = "usersWhoCantAwardPoints",
     ExistingFlairHandling = "existingFlairHandling",
     ExistingFlairCosmeticHandling = "existingFlairCosmeticHandling",
@@ -73,7 +74,7 @@ export enum AppSetting {
     UnflairedPostMessage = "unflairedPostMessage",
     OPOnlyDisallowedMessage = "opOnlyDisallowedMessage",
     PointAlreadyAwardedMessage = "pointAlreadyAwardedMessage",
-    // OnlyShowAllTimeScoreboard = "onlyShowAllTimeScoreboard",
+    OnlyShowAllTimeScoreboard = "onlyShowAllTimeScoreboard",
 }
 
 export enum TemplateDefaults {
@@ -86,9 +87,9 @@ export enum TemplateDefaults {
     DuplicateAwardMessage = "This user has already been awarded for this comment.",
     SelfAwardMessage = "You can't award yourself a {name}.",
     BotAwardMessage = "You can't award the bot a {name}.",
-    UsersWhoCannotBeAwardedPointsMessage = "The user you are trying to award points to is not allowed to be awarded points. Please contact the moderators if you have any questions.",
+    UsersWhoCannotBeAwardedPointsMessage = "The user you are trying to award {{name}}s to is not allowed to be awarded points. Please contact the moderators if you have any questions.",
     InvalidPostMessage = "Points cannot be awarded on this post because the recipient is suspended or shadowbanned.",
-    NotifyOnSelfAwardTemplate = "Hello {{awarder}}, you cannot award a point to yourself.",
+    NotifyOnSelfAwardTemplate = "Hello {{awarder}}, you cannot award a {{name}} to yourself.",
     NotifyOnSuccessTemplate = "+1 {point} to u/{{awardee}}.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
     NotifyAwardedUserTemplate = "Hello {{awardee}},\n\nYou have been awarded a point for your contribution! New score: {{score}}",
     NotifyOnSuperuserTemplate = 'Hello {{awardee}},\n\nNow that you have reached {{threshold}} points you can now award points yourself, even if normal users do not have permission to. Please use the command "{{command}}" if you\'d like to do this.',
@@ -113,6 +114,12 @@ export enum NotifyOnSuccessReplyOptions {
 }
 
 export enum PointAwardedReplyOptions {
+    NoReply = "none",
+    ReplyByPM = "replybypm",
+    ReplyAsComment = "replybycomment",
+}
+
+export enum NotifyUsersWhoCannotAwardPointsReplyOptions {
     NoReply = "none",
     ReplyByPM = "replybypm",
     ReplyAsComment = "replybycomment",
@@ -173,23 +180,23 @@ export const appSettings: SettingsFormField[] = [
         label: "Point System Settings",
         fields: [
             //todo: figure out how to properly implement this
-            // {
-            //     type: "select",
-            //     name: AppSetting.OnlyShowAllTimeScoreboard,
-            //     label: "Only Show All Time Leaderboard?",
-            //     helpText: "Choose whether to show daily, weekly, monthly, yearly, and all time leaderboards. Note that if this is set to false, the multiple leaderboards are currently a WIP.",
-            //     options: [
-            //         {
-            //             label: "True",
-            //             value: "true",
-            //         },
-            //         {
-            //             label: "False",
-            //             value: "false",
-            //         },
-            //     ],
-            //     defaultValue: ["true"],
-            // },
+            {
+                type: "select",
+                name: AppSetting.OnlyShowAllTimeScoreboard,
+                label: "Only Show All Time Leaderboard?",
+                helpText: "Choose whether to show daily, weekly, monthly, yearly, and all time leaderboards. Setting this to false is not recommended as it will not work and is a placeholder currently.",
+                options: [
+                    {
+                        label: "True",
+                        value: "true",
+                    },
+                    {
+                        label: "False",
+                        value: "false",
+                    },
+                ],
+                defaultValue: ["true"],
+            },
             {
                 type: "select",
                 name: AppSetting.AccessControl,
@@ -216,7 +223,6 @@ export const appSettings: SettingsFormField[] = [
                 defaultValue: ["moderators-approved-and-op"],
                 onValidate: selectFieldHasOptionChosen,
             },
-        
             {
                 type: "paragraph",
                 name: AppSetting.UsersWhoCannotAwardPoints,
@@ -286,7 +292,7 @@ export const appSettings: SettingsFormField[] = [
             {
                 type: "select",
                 name: AppSetting.NotifyOnSuccess,
-                label: "Notify users when a point is awarded successfully",
+                label: "Notify users when a point is awarded successfully.",
                 options: [
                     {
                         label: "Do not notify",
@@ -306,8 +312,29 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "select",
+                name: AppSetting.NotifyUsersWhoCannotAwardPoints,
+                label: "Notify a user if they are not allowed to award points.",
+                options: [
+                    {
+                        label: "Do not notify",
+                        value: NotifyUsersWhoCannotAwardPointsReplyOptions.NoReply,
+                    },
+                    {
+                        label: "Reply with comment",
+                        value: NotifyUsersWhoCannotAwardPointsReplyOptions.ReplyAsComment,
+                    },
+                    {
+                        label: "Send a private message",
+                        value: NotifyUsersWhoCannotAwardPointsReplyOptions.ReplyByPM,
+                    },
+                ],
+                defaultValue: [NotifyUsersWhoCannotAwardPointsReplyOptions.NoReply],
+                onValidate: selectFieldHasOptionChosen,
+            },
+            {
+                type: "select",
                 name: AppSetting.NotifyOnError,
-                label: "Notify users when an error occurs",
+                label: "Notify users when an error occurs.",
                 options: [
                     {
                         label: "Do not notify",
@@ -361,7 +388,7 @@ export const appSettings: SettingsFormField[] = [
             {
                 name: AppSetting.CSSClass,
                 type: "string",
-                label: "CSS class to use for points flairs",
+                label: "CSS class to use for points flairs.",
                 helpText:
                     "Optional. Please choose either a CSS class or flair template, not both.",
             },
@@ -382,7 +409,7 @@ export const appSettings: SettingsFormField[] = [
             {
                 name: AppSetting.SetPostFlairOnThanks,
                 type: "boolean",
-                label: "Set post flair when a reputation point is awarded",
+                label: "Set post flair when a reputation point is awarded.",
                 helpText:
                     "This can be used to mark a question as resolved, or answered",
                 defaultValue: false,
@@ -419,14 +446,14 @@ export const appSettings: SettingsFormField[] = [
                 type: "string",
                 name: AppSetting.UsersWhoCannotAwardPointsMessage,
                 label: "User Cannot Award Points Message",
-                helpText: `Message shown when a user tries to award points but is not allowed to. Specified in the "Users Who Cannot Award Points" setting.`,
-                defaultValue: "You do not have permission to award {{point}}s.",
+                helpText: `Message shown when a user specified in the "Users Who Cannot Award Points" setting tries to award points but is not allowed to.`,
+                defaultValue: TemplateDefaults.UsersWhoCannotAwardPointsMessage,
             },
             //todo: make it so that this will actually do something
             {
                 name: AppSetting.NotifyOnAutoSuperuserTemplate,
                 type: "paragraph",
-                label: "Message sent when a user reaches the trusted user threshold",
+                label: "Message sent when a user reaches the trusted user threshold.",
                 helpText:
                     "Placeholder supported: {{awarder}}, {{permalink}}, {{threshold}}, {{command}}",
                 defaultValue: TemplateDefaults.NotifyOnSuperuserTemplate,
@@ -562,10 +589,7 @@ export const appSettings: SettingsFormField[] = [
                 options: [
                     { label: "Off", value: LeaderboardMode.Off },
                     { label: "Mod Only", value: LeaderboardMode.ModOnly },
-                    {
-                        label: "Default settings for wiki",
-                        value: LeaderboardMode.Public,
-                    },
+                    { label: "Default settings for wiki", value: LeaderboardMode.Public },
                 ],
                 label: "Wiki Leaderboard Mode",
                 multiSelect: false,

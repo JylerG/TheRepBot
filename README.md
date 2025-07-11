@@ -6,7 +6,7 @@ The app gets triggered when a comment is posted or edited, but only never award 
 
 You can also set an optional post flair if a point is awarded, such as to mark the question as "Resolved".
 
-The app has backup and restore functionality from 1.4 onwards, which enables points to be preserved if you uninstall the app or if you want to import data from a previous reputation points app. For technical details of this function, please [see here](https://www.reddit.com/r/fsvapps/wiki/TheRepBotbackup/).
+The app has backup and restore functionality, which enables points to be preserved if you uninstall the app or if you want to import data from a previous reputation points app. For technical details of this function, please [see here](https://www.reddit.com/r/fsvapps/wiki/reputatorbotbackup/). THIS BIT IS FROM u/fsv'S CODE AND TAKEN STRAIGHT FROM THEIR REPUTATORBOT PROJECT.
 
 ## Custom Post
 
@@ -21,7 +21,7 @@ By using the subreddit ... menu, you can create a custom post that shows the cur
 
 You may wish to create an automod rule that detects phrases like "thank you" and similar in comments that do not have the trigger command, and reply suggesting that they use the command.
 
-I strongly recommend using a command that is not going to be used in "normal" comments, to avoid awarding points accidentally. If you use a ! prefix e.g. !thanks, you will reduce the risk of accidental points awarding.
+I strongly recommend using a command that is not going to be used in "normal" comments, to avoid awarding points accidentally. If you use a prefix e.g. !thanks or /award, you will reduce the risk of accidental points awarding.
 
 I recommend testing settings out on a test subreddit before deploying to a real subreddit for the first time.
 
@@ -41,7 +41,14 @@ Data for users is removed from the app within 48 hours from v1.3 onwards.
 
 This app is open source and licenced under the BSD 3-Clause Licence. You can find the source code on GitHub [here](https://github.com/JylerG/TheRepBot).
 
+NOTE: If you update settings, you will have to uninstall to be able to reimplement the content that you want in whatever you are editing.
+
 ## Version History
+### 0.0.13
+* Make it so that users can choose either only all time leaderboards, or daily, weekly, monthly, yearly, and alltime leaderboards.
+* Note that if you set this to false, it will not update any of the leaderboards. This is currently a WIP.
+### 0.0.12
+* Update README to be more accurate
 ### 0.0.11
 * Fix incorrect version number for 0.0.10
 ### 0.0.10

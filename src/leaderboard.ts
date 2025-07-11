@@ -1,10 +1,10 @@
-import {
+import { 
     ScheduledJobEvent,
     JobContext,
     WikiPagePermissionLevel,
     JSONObject,
 } from "@devvit/public-api";
-import { format } from "date-fns";
+import { format, startOfWeek, startOfMonth, startOfYear } from "date-fns";
 import { AppSetting, LeaderboardMode, TemplateDefaults } from "./settings.js";
 import { getSubredditName } from "./utility.js";
 
@@ -70,17 +70,16 @@ export async function updateLeaderboard(
     context: JobContext
 ) {
     const settings = await context.settings.getAll();
-    const leaderboardMode = settings[AppSetting.LeaderboardMode] as
-        | string[]
-        | undefined;
+    const leaderboardMode = settings[AppSetting.LeaderboardMode] as string[] | undefined;
     if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) return;
 
-    const wikiPageName =
-        (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
+    const onlyShowAllTime =
+        (settings[AppSetting.OnlyShowAllTimeScoreboard] as string[] | undefined)?.[0] === "true";
+
+    const wikiPageName = (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
     if (!wikiPageName.trim()) return;
 
-    const leaderboardSize =
-        (settings[AppSetting.LeaderboardSize] as number) ?? 10;
+    const leaderboardSize = (settings[AppSetting.LeaderboardSize] as number) ?? 10;
     const pointName = (settings[AppSetting.PointName] as string) ?? "point";
     const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
     const subredditName = await getSubredditName(context);
@@ -89,11 +88,8 @@ export async function updateLeaderboard(
     const formattedDate = format(new Date(), "MM/dd/yyyy HH:mm:ss");
     let markdown = `# ${capitalize(pointName)}boards for r/${subredditName}\n`;
 
-    const helpPage = settings[AppSetting.LeaderboardHelpPage] as
-        | string
-        | undefined;
-    const helpMessageTemplate =
-        TemplateDefaults.LeaderboardHelpPageMessage as string;
+    const helpPage = settings[AppSetting.LeaderboardHelpPage] as string | undefined;
+    const helpMessageTemplate = TemplateDefaults.LeaderboardHelpPageMessage as string;
     if (helpPage?.trim()) {
         markdown += `${helpMessageTemplate.replace("{{help}}", helpPage)}\n\n`;
     }
@@ -103,9 +99,11 @@ export async function updateLeaderboard(
             ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS
             : WikiPagePermissionLevel.MODS_ONLY;
 
-    const redisKey = leaderboardKey("alltime");
-    const { markdown: tableMarkdown, scores } =
-        await buildOrUpdateAllTimeLeaderboard(
+    const allScores: { member: string; score: number }[] = [];
+
+    if (onlyShowAllTime) {
+        const redisKey = leaderboardKey("alltime");
+        const { markdown: tableMarkdown, scores } = await buildOrUpdateAllTimeLeaderboard(
             context,
             subredditName,
             redisKey,
@@ -114,9 +112,50 @@ export async function updateLeaderboard(
             leaderboardSize
         );
 
-    markdown += `\n\n${tableMarkdown}`;
+        markdown += `\n\n${tableMarkdown}`;
+        allScores.push(...scores);
 
-    for (const { member, score } of scores) {
+        const expiry = expirationFor("alltime");
+        if (expiry) {
+            const ttl = Math.floor((expiry.getTime() - Date.now()) / 1000);
+            if (ttl > 0) {
+                await context.redis.expire(redisKey, ttl);
+            }
+        }
+    } else {
+        for (const timeframe of TIMEFRAMES) {
+            const { markdown: sectionMarkdown, scores } = await buildOrUpdateLeaderboardForAllTimeframes(
+                context,
+                subredditName,
+                timeframe,
+                pointName,
+                pointSymbol,
+                leaderboardSize
+            );
+
+            markdown += `\n\n## ${capitalize(timeframe)}\n${sectionMarkdown}`;
+            allScores.push(...scores);
+
+            const redisKey = leaderboardKey(timeframe);
+            const expiry = expirationFor(timeframe);
+            if (expiry) {
+                const ttl = Math.floor((expiry.getTime() - Date.now()) / 1000);
+                if (ttl > 0) {
+                    await context.redis.expire(redisKey, ttl);
+                }
+            }
+        }
+    }
+
+    // Build user pages once per unique user
+    const uniqueUsers = new Map<string, number>();
+    for (const { member, score } of allScores) {
+        if (!uniqueUsers.has(member) || score > (uniqueUsers.get(member) ?? 0)) {
+            uniqueUsers.set(member, score);
+        }
+    }
+
+    for (const [member, score] of uniqueUsers.entries()) {
         await buildOrUpdateUserPage(context, {
             member,
             score,
@@ -128,19 +167,8 @@ export async function updateLeaderboard(
         });
     }
 
-    const expiry = expirationFor("alltime");
-    if (expiry) {
-        const ttl = Math.floor((expiry.getTime() - Date.now()) / 1000);
-        if (ttl > 0) {
-            await context.redis.expire(redisKey, ttl);
-        }
-    }
-
     try {
-        const wikiPage = await context.reddit.getWikiPage(
-            subredditName,
-            wikiPageName
-        );
+        const wikiPage = await context.reddit.getWikiPage(subredditName, wikiPageName);
         if (wikiPage.content !== markdown) {
             await context.reddit.updateWikiPage({
                 subredditName,
@@ -282,78 +310,64 @@ async function buildOrUpdateUserPage(
     }
 }
 
-async function buildOrUpdateLeaderboardForAllTimeframes(
+function getRedisKey(subredditName: string, timeframe: string): string {
+    const now = new Date();
+    let dateSuffix = "";
+
+    switch (timeframe) {
+        case "daily":
+            dateSuffix = format(now, "yyyy-MM-dd");
+            break;
+        case "weekly":
+            dateSuffix = format(startOfWeek(now, { weekStartsOn: 0 }), "yyyy-MM-dd"); // Sunday UTC
+            break;
+        case "monthly":
+            dateSuffix = format(startOfMonth(now), "yyyy-MM");
+            break;
+        case "yearly":
+            dateSuffix = format(startOfYear(now), "yyyy");
+            break;
+        case "alltime":
+            return `leaderboard:${subredditName}:alltime`;
+        default:
+            throw new Error(`Invalid timeframe: ${timeframe}`);
+    }
+
+    return `leaderboard:${subredditName}:${timeframe}:${dateSuffix}`;
+}
+
+
+export async function buildOrUpdateLeaderboardForAllTimeframes(
     context: JobContext,
     subredditName: string,
+    timeframe: "daily" | "weekly" | "monthly" | "yearly" | "alltime",
     pointName: string,
     pointSymbol: string,
-    leaderboardSize: number,
-    formattedDate: string,
-    timeframe: string,
-    correctPermissionLevel: WikiPagePermissionLevel
-): Promise<string> {
-    let markdown = "";
+    leaderboardSize: number
+): Promise<{ markdown: string; scores: { member: string; score: number }[] }> {
+    const redisKey = getRedisKey(subredditName, timeframe);
 
-    const redisKey = leaderboardKey(timeframe);
-    const title = capitalize(timeframe);
+    const scores = await context.redis.zRange(redisKey, 0, leaderboardSize - 1, {
+        by: "score",
+        reverse: true,
+    });
 
-    markdown += `## ${title}\n\n`; // Add heading + blank line
-
-    // Fetch scores sorted by score descending
-    const scores: { member: string; score: number }[] =
-        await context.redis.zRange(redisKey, 0, leaderboardSize - 1, {
-            by: "score",
-            reverse: true,
-        });
-
-    // Add the table header always, for every timeframe
-    markdown += `| Rank | User | ${capitalize(pointName)}${
-        pointName.endsWith("s") ? "" : "s"
-    } |\n`;
-    markdown += `|------|------|---------|\n`;
+    let markdown = `| Rank | User | ${capitalize(pointName)}${pointName.endsWith("s") ? "" : "s"} |\n|------|------|---------|\n`;
 
     if (scores.length === 0) {
-        markdown += `| – | No data yet | – |\n\n`; // "No data" row + blank line after
+        markdown += `| – | No data yet | – |\n`;
     } else {
         for (let i = 0; i < scores.length; i++) {
             const { member, score } = scores[i];
             const safeMember = markdownEscape(member);
-            const userWikiLink = `/r/${subredditName}/wiki/user/${encodeURIComponent(
-                member
-            )}`;
-            markdown += `| ${
-                i + 1
-            } | [${safeMember}](${userWikiLink}) | ${score}${pointSymbol} |\n`;
-
-            // Update user page
-            await buildOrUpdateUserPage(context, {
-                member,
-                score,
-                subredditName,
-                pointName,
-                pointSymbol,
-                formattedDate,
-                correctPermissionLevel,
-            });
-        }
-
-        markdown += `\n`; // blank line after each table
-    }
-
-    // Set Redis key expiration if applicable
-    const expiry = expirationFor(timeframe);
-    if (expiry) {
-        const ttl = Math.floor((expiry.getTime() - Date.now()) / 1000);
-        if (ttl > 0) {
-            await context.redis.expire(redisKey, ttl);
+            const userWikiLink = `/r/${subredditName}/wiki/user/${encodeURIComponent(member)}`;
+            markdown += `| ${i + 1} | [${safeMember}](${userWikiLink}) | ${score}${pointSymbol} |\n`;
         }
     }
 
-    // Append last updated timestamp in UTC
-    markdown += `Last updated: ${formattedDate} UTC`;
-
-    return markdown;
+    return { markdown, scores };
 }
+
 
 export async function buildOrUpdateAllTimeLeaderboard(
     context: JobContext,
