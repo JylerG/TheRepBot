@@ -186,15 +186,20 @@ async function setUserScore(
         });
     }
 
-    // Fallback to newScore if wiki doesn't provide it
-    const finalScore = userScoreFromWiki ?? newScore;
+    // Fallback to wiki if newScore doesn't provide it
+    const finalScore = newScore ?? userScoreFromWiki;
 
     // ✅ Format flair text
     const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
-    const flairText =
-        flairSetting === ExistingFlairOverwriteHandling.OverwriteNumericSymbol
-            ? `${finalScore}${pointSymbol}`
-            : `${finalScore}`;
+    let flairText = "";
+    switch (flairSetting) {
+        case ExistingFlairOverwriteHandling.OverwriteNumericSymbol:
+            flairText = `${finalScore}${pointSymbol}`;
+            break;
+        case ExistingFlairOverwriteHandling.OverwriteNumeric:
+            flairText = `${finalScore}`
+            break;
+    }
 
     // ✅ Set user flair
     await context.reddit.setUserFlair({
@@ -508,12 +513,6 @@ export async function handleThanksEvent(
         context,
         settings
     );
-
-    // **Mark this award in Redis to prevent duplicates**
-    // Set expiry to 30 days (adjust as needed)
-    await context.redis.set(redisKey, "1");
-
-    // Continue with notification and leaderboard update...
 
     const rawNotifySuccess =
         ((settings[AppSetting.NotifyOnSuccess] as string[]) ?? [])[0] ?? "none";
