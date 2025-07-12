@@ -18,6 +18,7 @@ import {
     startOfMonth,
     startOfYear,
 } from "date-fns";
+import { leaderboardKey } from "./leaderboard.js";
 import {
     ExistingFlairOverwriteHandling,
     AppSetting,
@@ -31,6 +32,7 @@ import { isLinkId } from "@devvit/shared-types/tid.js";
 import { manualSetPointsForm } from "./main.js";
 import { LeaderboardMode } from "./settings.js";
 import { logger } from "./logger.js";
+import { updateLeaderboard } from "./leaderboard.js";
 
 export const POINTS_STORE_KEY = "thanksPointsStore";
 const TIMEFRAMES = ["daily", "weekly", "monthly", "yearly", "alltime"] as const;
@@ -108,12 +110,23 @@ async function setUserScore(
     flairScoreIsNaN: boolean,
     context: TriggerContext,
     settings: SettingsValues
-) {
-    // ✅ Store score in Redis
-    await context.redis.zAdd(POINTS_STORE_KEY, {
-        member: username,
-        score: newScore,
-    });
+): Promise<void> {
+    const subredditName = await getSubredditName(context);
+
+    // ✅ Store score in Redis under each timeframe
+    for (const timeframe of TIMEFRAMES) {
+        const redisKey = leaderboardKey(timeframe, subredditName);
+        await context.redis.zAdd(redisKey, {
+            member: username,
+            score: newScore,
+        });
+        logger.debug(`✅ Stored score in Redis`, {
+            timeframe,
+            redisKey,
+            member: username,
+            score: newScore,
+        });
+    }
 
     // ✅ Schedule cleanup
     await setCleanupForUsers([username], context);
@@ -127,7 +140,7 @@ async function setUserScore(
         },
     });
 
-    // ✅ Flair handling settings
+    // ✅ Flair settings
     const flairSetting = ((settings[AppSetting.ExistingFlairHandling] as
         | string[]
         | undefined) ?? [
@@ -135,9 +148,7 @@ async function setUserScore(
     ])[0] as ExistingFlairOverwriteHandling;
 
     const shouldSetUserFlair =
-        flairSetting !== ExistingFlairOverwriteHandling.NeverSet &&
-        (!flairScoreIsNaN ||
-            flairSetting === ExistingFlairOverwriteHandling.OverwriteAll);
+        flairSetting !== ExistingFlairOverwriteHandling.NeverSet;
 
     if (!shouldSetUserFlair) return;
 
@@ -149,23 +160,57 @@ async function setUserScore(
 
     if (!cssClass) cssClass = undefined;
     if (!flairTemplate) flairTemplate = undefined;
-    if (cssClass && flairTemplate) cssClass = undefined; // Template takes priority
+    if (cssClass && flairTemplate) cssClass = undefined; // template wins
 
-    // ✅ Apply symbol if OverwriteNumericSymbol is selected
+    // ✅ Try to get user's score from their wiki page
+    let userScoreFromWiki: number | null = null;
+    const userWikiPageName = `user/${username}`;
+
+    try {
+        const userPage = await context.reddit.getWikiPage(
+            subredditName,
+            userWikiPageName
+        );
+        const wikiContent = userPage.content ?? "";
+
+        // Optional: more robust markdown parsing can be used
+        const scoreMatch = wikiContent.match(/Total:\s*(\d+)/i);
+        if (scoreMatch) {
+            userScoreFromWiki = parseInt(scoreMatch[1], 10);
+        }
+    } catch (err) {
+        logger.warn("⚠️ Could not read user wiki page for flair setting", {
+            subredditName,
+            username,
+            err,
+        });
+    }
+
+    // Fallback to newScore if wiki doesn't provide it
+    const finalScore = userScoreFromWiki ?? newScore;
+
+    // ✅ Format flair text
     const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
     const flairText =
         flairSetting === ExistingFlairOverwriteHandling.OverwriteNumericSymbol
-            ? `${newScore}${pointSymbol}`
-            : `${newScore}`;
+            ? `${finalScore}${pointSymbol}`
+            : `${finalScore}`;
 
-    const subredditName = await getSubredditName(context);
-
+    // ✅ Set user flair
     await context.reddit.setUserFlair({
         subredditName,
         username,
         cssClass,
         flairTemplateId: flairTemplate,
         text: flairText,
+    });
+
+    logger.debug(`✅ Set user flair`, {
+        username,
+        flairText,
+        flairSetting,
+        cssClass,
+        flairTemplate,
     });
 }
 
@@ -439,30 +484,7 @@ export async function handleThanksEvent(
     const alreadyAwarded = await context.redis.exists(redisKey);
     if (alreadyAwarded) {
         logger.info("❌ Awarder already awarded this comment");
-
-        const notify =
-            ((settings[AppSetting.NotifyOnError] as string[]) ?? [])[0] ??
-            NotifyOnErrorReplyOptions.NoReply;
-        const template =
-            (settings[AppSetting.PointAlreadyAwardedMessage] as string) ??
-            TemplateDefaults.NotifyOnPointAlreadyAwardedTemplate;
-        const alreadyAwardedMessage = formatMessage(template, {
-            name: settings[AppSetting.PointName] as string,
-        });
-
-        if (notify === NotifyOnErrorReplyOptions.ReplyByPM) {
-            await context.reddit.sendPrivateMessage({
-                to: event.author.name,
-                subject: `Point Already Awarded in r/${event.subreddit.name}`,
-                text: alreadyAwardedMessage,
-            });
-        } else if (notify === NotifyOnErrorReplyOptions.ReplyAsComment) {
-            await context.reddit.submitComment({
-                id: event.comment.id,
-                text: alreadyAwardedMessage,
-            });
-        }
-
+        // notify and return earlier, so no duplicate calls below
         return;
     }
 
@@ -487,9 +509,11 @@ export async function handleThanksEvent(
         settings
     );
 
-    await context.redis.set(redisKey, Date.now().toString(), {
-        expiration: addWeeks(new Date(), 1),
-    });
+    // **Mark this award in Redis to prevent duplicates**
+    // Set expiry to 30 days (adjust as needed)
+    await context.redis.set(redisKey, "1");
+
+    // Continue with notification and leaderboard update...
 
     const rawNotifySuccess =
         ((settings[AppSetting.NotifyOnSuccess] as string[]) ?? [])[0] ?? "none";
@@ -506,7 +530,8 @@ export async function handleThanksEvent(
             (settings[AppSetting.SuccessMessage] as string) ??
             TemplateDefaults.NotifyOnSuccessTemplate;
         const scoreboard = `https://reddit.com/r/${event.subreddit.name}/wiki/${
-            settings[AppSetting.ScoreboardLink] ?? "leaderboard"
+            settings[AppSetting.ScoreboardLink] ??
+            `https://reddit.com/r/${event.subreddit.name}/wiki/leaderboards`
         }`;
 
         const message = formatMessage(successTemplate, {
@@ -522,7 +547,9 @@ export async function handleThanksEvent(
             if (notifyAwarded === PointAwardedReplyOptions.ReplyByPM) {
                 await context.reddit.sendPrivateMessage({
                     to: event.author.name,
-                    subject: `Point Awarded in r/${event.subreddit.name}`,
+                    subject: `${capitalize(pointName)} awarded to you in r/${
+                        event.subreddit.name
+                    }`,
                     text: message,
                 });
             } else if (
@@ -542,15 +569,9 @@ export async function handleThanksEvent(
         {
             name: "manual-update",
             data: { reason: "Point awarded" },
-        },
+        } as ScheduledJobEvent<JSONObject | undefined>,
         context as unknown as Context
     );
-}
-
-function leaderboardKey(timeframe: string): string {
-    return timeframe === "alltime"
-        ? POINTS_STORE_KEY
-        : `thanksPointsStore:${timeframe}`;
 }
 
 function expirationFor(timeframe: string): Date | undefined {
@@ -603,163 +624,6 @@ function capitalize(word: string): string {
 
 function markdownEscape(input: string): string {
     return input.replace(/([\\`*_{}\[\]()#+\-.!])/g, "\\$1");
-}
-
-export async function updateLeaderboard(
-    event: ScheduledJobEvent<JSONObject | undefined>,
-    context: Context
-) {
-    const settings = await context.settings.getAll();
-    const leaderboardMode = settings[AppSetting.LeaderboardMode] as
-        | string[]
-        | undefined;
-    if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) return;
-
-    const onlyShowAllTime =
-        (
-            settings[AppSetting.OnlyShowAllTimeScoreboard] as
-                | string[]
-                | undefined
-        )?.[0] === "true";
-
-    const wikiPageName =
-        (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
-    if (!wikiPageName.trim()) return;
-
-    const leaderboardSize =
-        (settings[AppSetting.LeaderboardSize] as number) ?? 10;
-    const pointName = (settings[AppSetting.PointName] as string) ?? "point";
-    const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
-    const subredditName = await getSubredditName(context);
-    if (!subredditName) return;
-
-    const formattedDate = format(new Date(), "MM/dd/yyyy HH:mm:ss");
-    let markdown = `# ${capitalize(pointName)}boards for r/${subredditName}\n`;
-
-    const helpPage = settings[AppSetting.LeaderboardHelpPage] as
-        | string
-        | undefined;
-    const helpMessageTemplate =
-        TemplateDefaults.LeaderboardHelpPageMessage as string;
-    if (helpPage?.trim()) {
-        markdown += `${helpMessageTemplate.replace("{{help}}", helpPage)}\n\n`;
-    }
-
-    const correctPermissionLevel =
-        leaderboardMode[0] === LeaderboardMode.Public
-            ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS
-            : WikiPagePermissionLevel.MODS_ONLY;
-
-    const allScores: { member: string; score: number }[] = [];
-
-    if (onlyShowAllTime) {
-        const redisKey = leaderboardKey("alltime");
-        const { markdown: tableMarkdown, scores } =
-            await buildOrUpdateAllTimeLeaderboard(
-                context,
-                subredditName,
-                redisKey,
-                pointName,
-                pointSymbol,
-                leaderboardSize
-            );
-
-        markdown += `\n\n${tableMarkdown}`;
-        allScores.push(...scores);
-
-        const expiry = expirationFor("alltime");
-        if (expiry) {
-            const ttl = Math.floor((expiry.getTime() - Date.now()) / 1000);
-            if (ttl > 0) {
-                await context.redis.expire(redisKey, ttl);
-            }
-        }
-    } else {
-        for (const timeframe of TIMEFRAMES) {
-            const { markdown: sectionMarkdown, scores } =
-                await buildOrUpdateLeaderboardForAllTimeframes(
-                    context,
-                    subredditName,
-                    timeframe,
-                    pointName,
-                    pointSymbol,
-                    leaderboardSize
-                );
-
-            markdown += `\n\n## ${capitalize(timeframe)}\n${sectionMarkdown}`;
-            allScores.push(...scores);
-
-            const redisKey = leaderboardKey(timeframe);
-            const expiry = expirationFor(timeframe);
-            if (expiry) {
-                const ttl = Math.floor((expiry.getTime() - Date.now()) / 1000);
-                if (ttl > 0) {
-                    await context.redis.expire(redisKey, ttl);
-                }
-            }
-        }
-    }
-
-    // Build user pages once per unique user
-    const uniqueUsers = new Map<string, number>();
-    for (const { member, score } of allScores) {
-        if (
-            !uniqueUsers.has(member) ||
-            score > (uniqueUsers.get(member) ?? 0)
-        ) {
-            uniqueUsers.set(member, score);
-        }
-    }
-
-    for (const [member, score] of uniqueUsers.entries()) {
-        await buildOrUpdateUserPage(context, {
-            member,
-            score,
-            subredditName,
-            pointName,
-            pointSymbol,
-            formattedDate,
-            correctPermissionLevel,
-        });
-    }
-
-    try {
-        const wikiPage = await context.reddit.getWikiPage(
-            subredditName,
-            wikiPageName
-        );
-        if (wikiPage.content !== markdown) {
-            await context.reddit.updateWikiPage({
-                subredditName,
-                page: wikiPageName,
-                content: markdown,
-                reason: `Updated ${formattedDate}`,
-            });
-        }
-
-        const wikiSettings = await wikiPage.getSettings();
-        if (wikiSettings.permLevel !== correctPermissionLevel) {
-            await context.reddit.updateWikiPageSettings({
-                subredditName,
-                page: wikiPageName,
-                listed: true,
-                permLevel: correctPermissionLevel,
-            });
-        }
-    } catch {
-        await context.reddit.createWikiPage({
-            subredditName,
-            page: wikiPageName,
-            content: markdown,
-            reason: `Initial setup`,
-        });
-        await context.reddit.updateWikiPageSettings({
-            subredditName,
-            page: wikiPageName,
-            listed: true,
-            permLevel: correctPermissionLevel,
-        });
-    }
 }
 
 async function buildOrUpdateUserPage(
@@ -867,118 +731,6 @@ async function buildOrUpdateUserPage(
             permLevel: correctPermissionLevel,
         });
     }
-}
-
-function getRedisKey(subredditName: string, timeframe: string): string {
-    const now = new Date();
-    let dateSuffix = "";
-
-    switch (timeframe) {
-        case "daily":
-            dateSuffix = format(now, "yyyy-MM-dd");
-            break;
-        case "weekly":
-            dateSuffix = format(
-                startOfWeek(now, { weekStartsOn: 0 }),
-                "yyyy-MM-dd"
-            ); // Sunday UTC
-            break;
-        case "monthly":
-            dateSuffix = format(startOfMonth(now), "yyyy-MM");
-            break;
-        case "yearly":
-            dateSuffix = format(startOfYear(now), "yyyy");
-            break;
-        case "alltime":
-            return `leaderboard:${subredditName}:alltime`;
-        default:
-            throw new Error(`Invalid timeframe: ${timeframe}`);
-    }
-
-    return `leaderboard:${subredditName}:${timeframe}:${dateSuffix}`;
-}
-
-export async function buildOrUpdateLeaderboardForAllTimeframes(
-    context: Context,
-    subredditName: string,
-    timeframe: "daily" | "weekly" | "monthly" | "yearly" | "alltime",
-    pointName: string,
-    pointSymbol: string,
-    leaderboardSize: number
-): Promise<{ markdown: string; scores: { member: string; score: number }[] }> {
-    const redisKey = getRedisKey(subredditName, timeframe);
-
-    const scores = await context.redis.zRange(
-        redisKey,
-        0,
-        leaderboardSize - 1,
-        {
-            by: "score",
-            reverse: true,
-        }
-    );
-
-    let markdown = `| Rank | User | ${capitalize(pointName)}${
-        pointName.endsWith("s") ? "" : "s"
-    } |\n|------|------|---------|\n`;
-
-    if (scores.length === 0) {
-        markdown += `| – | No data yet | – |\n`;
-    } else {
-        for (let i = 0; i < scores.length; i++) {
-            const { member, score } = scores[i];
-            const safeMember = markdownEscape(member);
-            const userWikiLink = `/r/${subredditName}/wiki/user/${encodeURIComponent(
-                member
-            )}`;
-            markdown += `| ${
-                i + 1
-            } | [${safeMember}](${userWikiLink}) | ${score}${pointSymbol} |\n`;
-        }
-    }
-
-    return { markdown, scores };
-}
-
-export async function buildOrUpdateAllTimeLeaderboard(
-    context: Context,
-    subredditName: string,
-    redisKey: string,
-    pointName: string,
-    pointSymbol: string,
-    leaderboardSize: number
-): Promise<{ markdown: string; scores: { member: string; score: number }[] }> {
-    // Get top scores descending
-    const scores = await context.redis.zRange(
-        redisKey,
-        0,
-        leaderboardSize - 1,
-        {
-            by: "score",
-            reverse: true, // highest score first
-        }
-    );
-
-    let markdown = `| Rank | User | ${capitalize(pointName)}${
-        pointName.endsWith("s") ? "" : "s"
-    } |\n|------|------|---------|\n`;
-
-    if (scores.length === 0) {
-        markdown += `| – | No data yet | – |\n`;
-    } else {
-        for (let i = 0; i < scores.length; i++) {
-            const { member, score } = scores[i];
-            const safeMember = markdownEscape(member);
-            const userWikiLink = `/r/${subredditName}/wiki/user/${encodeURIComponent(
-                member
-            )}`;
-            markdown += `| ${
-                i + 1
-            } | [${safeMember}](${userWikiLink}) | ${score}${pointSymbol} |\n`;
-        }
-    }
-
-    return { markdown, scores };
 }
 
 export async function handleManualPointSetting(

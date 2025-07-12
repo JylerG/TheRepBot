@@ -373,10 +373,6 @@ export const appSettings: SettingsFormField[] = [
                         value: ExistingFlairOverwriteHandling.OverwriteNumeric,
                     },
                     {
-                        label: "Set flair to new score, if user has no flair",
-                        value: ExistingFlairOverwriteHandling.OverwriteAll,
-                    },
-                    {
                         label: "Never set flair",
                         value: ExistingFlairOverwriteHandling.NeverSet,
                     },

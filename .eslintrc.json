@@ -1,16 +1,43 @@
 {
-  "plugins": ["sonarjs"],
-  "rules": {
-    "sonarjs/no-duplicate-string": "off",
-    "sonarjs/no-identical-functions": "off"
-  },
+  "plugins": ["sonarjs", "@typescript-eslint", "prettier"],
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
     "project": "./tsconfig.json",
-    "tsconfigRootDir": "."
+    "tsconfigRootDir": ".",
+    "sourceType": "module"
   },
   "extends": [
     "plugin:@typescript-eslint/recommended",
-    "plugin:@typescript-eslint/recommended-requiring-type-checking"
+    "plugin:@typescript-eslint/recommended-requiring-type-checking",
+    "plugin:prettier/recommended"
+  ],
+  "rules": {
+    "sonarjs/no-duplicate-string": "off",
+    "sonarjs/no-identical-functions": "off",
+    "prettier/prettier": "error"
+  },
+  "overrides": [
+    {
+      "files": ["*.js", "*.mjs"],
+      "parserOptions": {
+        "project": null
+      },
+      "rules": {
+        "@typescript-eslint/await-thenable": "off",
+        "@typescript-eslint/no-floating-promises": "off",
+        "@typescript-eslint/no-misused-promises": "off"
+      }
+    },
+    {
+      "files": ["*.ts", "*.tsx"],
+      "rules": {
+        // override/add ts-specific rules if needed
+      }
+    },
+    {
+      "files": ["*.json", "*.yaml", "*.yml", "*.md"],
+      "excludedFiles": "*",
+      "rules": {}
+    }
   ]
 }
