@@ -105,12 +105,14 @@ export async function updateLeaderboard(
         | undefined;
     if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) return;
 
-    const onlyShowAllTime =
-        (
-            settings[AppSetting.OnlyShowAllTimeScoreboard] as
-                | string[]
-                | undefined
-        )?.[0] === "true";
+    const onlyShowAllTime = true;
+    // TODO: Re-enable this setting if implementability is made possible
+    // const onlyShowAllTime =
+    //     (
+    //         settings[AppSetting.OnlyShowAllTimeScoreboard] as
+    //             | string[]
+    //             | undefined
+    //     )?.[0] === "true";
 
     const wikiPageName =
         (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";

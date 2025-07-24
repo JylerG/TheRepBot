@@ -1,4 +1,4 @@
-TheRepBot is an app that allows users to award reputation points if a user has been helpful. Its main use case is for help and advice subreddits to help indicate users who have a track record of providing useful solutions.
+RepBot is an app that allows users to award reputation points if a user has been helpful. Its main use case is for help and advice subreddits to help indicate users who have a track record of providing useful solutions.
 
 It allows the OP of a post, a mod, or a trusted user to reply to a user and award them a point using a bot command, which will be stored as their user flair (optional from v1.2) and stored in a data store. The command can be customisable (by default it is `!thanks`).
 
@@ -45,8 +45,7 @@ NOTE: If you update settings, you will have to uninstall to be able to reimpleme
 
 ## Version History
 ### 0.0.13
-* Make it so that users can choose either only all time leaderboards, or daily, weekly, monthly, yearly, and alltime leaderboards.
-* Note that if you set this to false, it will not update any of the leaderboards. This is currently a WIP.
+* * Make it so only the all time leaderboard appears (can't figure out how to do every leaderboard) (STILL IN PROGRESS)
 ### 0.0.12
 * Update README to be more accurate
 ### 0.0.11

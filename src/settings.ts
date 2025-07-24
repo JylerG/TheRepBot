@@ -74,14 +74,13 @@ export enum AppSetting {
     UnflairedPostMessage = "unflairedPostMessage",
     OPOnlyDisallowedMessage = "opOnlyDisallowedMessage",
     PointAlreadyAwardedMessage = "pointAlreadyAwardedMessage",
-    OnlyShowAllTimeScoreboard = "onlyShowAllTimeScoreboard",
 }
 
 export enum TemplateDefaults {
     NotifyOnPointAlreadyAwardedTemplate = "You have already awarded this comment a {{name}}.",
     LeaderboardHelpPageMessage = "[How to award points with RepBot.]({{help}})",
     DisallowedFlairMessage = "Points cannot be awarded on posts with this flair. Please choose another post.",
-    UsersWhoCannotAwardPointsMessage = "You do not have permission to award points.",
+    UsersWhoCannotAwardPointsMessage = "You do not have permission to award {{name}}s.",
     ModOnlyDisallowedMessage = "Only moderators are allowed to award points.",
     ApprovedOnlyDisallowedMessage = "Only moderators and approved users can award points.",
     DuplicateAwardMessage = "This user has already been awarded for this comment.",
@@ -179,28 +178,10 @@ export const appSettings: SettingsFormField[] = [
         type: "group",
         label: "Point System Settings",
         fields: [
-            //todo: figure out how to properly implement this
-            {
-                type: "select",
-                name: AppSetting.OnlyShowAllTimeScoreboard,
-                label: "Only Show All Time Leaderboard?",
-                helpText: "Choose whether to show daily, weekly, monthly, yearly, and all time leaderboards. Setting this to false is not recommended as it will not work and is a placeholder currently.",
-                options: [
-                    {
-                        label: "True",
-                        value: "true",
-                    },
-                    {
-                        label: "False",
-                        value: "false",
-                    },
-                ],
-                defaultValue: ["true"],
-            },
             {
                 type: "select",
                 name: AppSetting.AccessControl,
-                label: "Who Can Award?",
+                label: "Who Can Award Points",
                 helpText: "Choose who is allowed to award points.",
                 options: [
                     {
@@ -278,7 +259,7 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.PointName,
                 label: "Point Name",
                 helpText:
-                    "Singular form of the name shown in award messages, like 'point', 'kudo', etc.",
+                    "Singular form of the name shown in award messages, like 'point', 'kudo', etc. Lowercase is recommended.",
                 defaultValue: "point",
             },
             {
@@ -292,7 +273,7 @@ export const appSettings: SettingsFormField[] = [
             {
                 type: "select",
                 name: AppSetting.NotifyOnSuccess,
-                label: "Notify users when a point is awarded successfully.",
+                label: "Notify users when a point is awarded successfully",
                 options: [
                     {
                         label: "Do not notify",
@@ -313,7 +294,7 @@ export const appSettings: SettingsFormField[] = [
             {
                 type: "select",
                 name: AppSetting.NotifyUsersWhoCannotAwardPoints,
-                label: "Notify a user if they are not allowed to award points.",
+                label: "Notify a user if they are not allowed to award points",
                 options: [
                     {
                         label: "Do not notify",
@@ -334,7 +315,7 @@ export const appSettings: SettingsFormField[] = [
             {
                 type: "select",
                 name: AppSetting.NotifyOnError,
-                label: "Notify users when an error occurs.",
+                label: "Notify users when an error occurs",
                 options: [
                     {
                         label: "Do not notify",
@@ -384,7 +365,7 @@ export const appSettings: SettingsFormField[] = [
             {
                 name: AppSetting.CSSClass,
                 type: "string",
-                label: "CSS class to use for points flairs.",
+                label: "CSS class to use for points flairs",
                 helpText:
                     "Optional. Please choose either a CSS class or flair template, not both.",
             },
@@ -405,9 +386,9 @@ export const appSettings: SettingsFormField[] = [
             {
                 name: AppSetting.SetPostFlairOnThanks,
                 type: "boolean",
-                label: "Set post flair when a reputation point is awarded.",
+                label: "Set post flair when a reputation point is awarded",
                 helpText:
-                    "This can be used to mark a question as resolved, or answered",
+                    "This can be used to mark a question as resolved, or answered.",
                 defaultValue: false,
             },
             {
@@ -442,16 +423,16 @@ export const appSettings: SettingsFormField[] = [
                 type: "string",
                 name: AppSetting.UsersWhoCannotAwardPointsMessage,
                 label: "User Cannot Award Points Message",
-                helpText: `Message shown when a user specified in the "Users Who Cannot Award Points" setting tries to award points but is not allowed to.`,
+                helpText: `Message shown when a user specified in the "Users Who Cannot Award Points" setting tries to award points but is not allowed to. You can use {{name}} to get the name of the point.`,
                 defaultValue: TemplateDefaults.UsersWhoCannotAwardPointsMessage,
             },
             //todo: make it so that this will actually do something
             {
                 name: AppSetting.NotifyOnAutoSuperuserTemplate,
                 type: "paragraph",
-                label: "Message sent when a user reaches the trusted user threshold.",
+                label: "Message sent when a user reaches the trusted user threshold",
                 helpText:
-                    "Placeholder supported: {{awarder}}, {{permalink}}, {{threshold}}, {{command}}",
+                    "Placeholder supported: {{awarder}} for the awarder's username, {{permalink}} to link to the post they received superuser on, {{threshold}} for the threshold as a number, {{command}} to display the command they can use to award points.",
                 defaultValue: TemplateDefaults.NotifyOnSuperuserTemplate,
             },
             {
@@ -571,7 +552,7 @@ export const appSettings: SettingsFormField[] = [
                     "Message shown when trying to award points to a user who is excluded from receiving points. You can use {{awardee}} to get the username of the user being awarded.",
                 type: "string",
                 defaultValue:
-                    "Sorry, you cannot award points to {{awardee}} as they are excluded from receiving points.",
+                    "Sorry, you cannot award points to u/{{awardee}} as they are excluded from receiving points.",
             },
         ],
     },
@@ -596,11 +577,11 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.LeaderboardSize,
                 type: "number",
                 label: "Leaderboard Size",
-                helpText: "Number of users to show on the leaderboard (1-50).",
-                defaultValue: 10,
+                helpText: "Number of users to show on the leaderboard.",
+                defaultValue: 50,
                 onValidate: ({ value }) => {
-                    if (value !== undefined && (value < 1 || value > 50)) {
-                        return "Value should be between 1 and 50";
+                    if (value !== undefined && (value < 1 || value > 100)) {
+                        return "Value should be between 1 and 100";
                     }
                 },
             },
@@ -609,7 +590,8 @@ export const appSettings: SettingsFormField[] = [
                 type: "string",
                 label: "Scoreboard Wiki Link",
                 helpText:
-                    "Name of the wiki page for your subreddit's scoreboard (e.g. leaderboards).",
+                    "Name of the wiki page for your subreddit's scoreboard (e.g. leaderboard).",
+                defaultValue: "leaderboard",
             },
             {
                 name: AppSetting.LeaderboardHelpPage,

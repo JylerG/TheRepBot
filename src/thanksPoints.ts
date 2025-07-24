@@ -186,18 +186,15 @@ async function setUserScore(
         });
     }
 
-    // Fallback to wiki if newScore doesn't provide it
-    const finalScore = newScore ?? userScoreFromWiki;
-
     // ✅ Format flair text
     const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
     let flairText = "";
     switch (flairSetting) {
         case ExistingFlairOverwriteHandling.OverwriteNumericSymbol:
-            flairText = `${finalScore}${pointSymbol}`;
+            flairText = `${newScore}${pointSymbol}`;
             break;
         case ExistingFlairOverwriteHandling.OverwriteNumeric:
-            flairText = `${finalScore}`
+            flairText = `${newScore}`
             break;
     }
 
@@ -513,6 +510,12 @@ export async function handleThanksEvent(
         context,
         settings
     );
+
+    // **Mark this award in Redis to prevent duplicates**
+    // Set expiry to 30 days (adjust as needed)
+    await context.redis.set(redisKey, "1");
+
+    // Continue with notification and leaderboard update...
 
     const rawNotifySuccess =
         ((settings[AppSetting.NotifyOnSuccess] as string[]) ?? [])[0] ?? "none";

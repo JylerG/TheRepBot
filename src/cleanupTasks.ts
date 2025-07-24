@@ -3,6 +3,7 @@ import { addDays, addMinutes, subMinutes } from "date-fns";
 import { POINTS_STORE_KEY } from "./thanksPoints.js";
 import { CronExpressionParser } from "cron-parser";
 import { ADHOC_CLEANUP_JOB, CLEANUP_JOB_CRON } from "./constants.js";
+import { AppSetting } from "./settings.js";
 
 const CLEANUP_LOG_KEY = "cleanupStore";
 const DAYS_BETWEEN_CHECKS = 28;
@@ -48,7 +49,8 @@ export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext
 
     await context.reddit.getAppUser(); // Ensure Reddit is reachable
 
-    const itemsToCheck = 50;
+    const leaderboardSizeSetting = await context.settings.get(AppSetting.LeaderboardSize);
+    const itemsToCheck = Number(leaderboardSizeSetting) || 50;
     const usersToCheck = items.slice(0, itemsToCheck).map(item => item.member);
 
     const userStatuses: UserActive[] = [];
