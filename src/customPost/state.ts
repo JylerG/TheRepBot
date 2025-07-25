@@ -2,12 +2,14 @@ import { Context, useInterval, UseIntervalResult, useState, UseStateResult } fro
 import { AppSetting } from "../settings.js";
 import { POINTS_STORE_KEY } from "../thanksPoints.js";
 import { CustomPostData } from "./index.js";
+import { fetchLeaderboardEntries } from "../helpers/LeaderboardHelpers.js";
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
 export type LeaderboardEntry = {
     username: string;
     score: number;
     rank: number;
+    pointName: string;
 };
 
 export class LeaderboardState {
@@ -23,10 +25,10 @@ export class LeaderboardState {
     constructor (public context: Context) {
         this.leaderboardSize = useState<number>(async () => this.getLeaderboardSize());
         this.leaderboardHelpUrl = useState<string>(async () => await context.settings.get<string>(AppSetting.LeaderboardHelpPage) ?? "");
-        this.leaderboardEntries = useState<LeaderboardEntry[]>(async () => this.fetchLeaderboard());
+        this.leaderboardEntries = useState<LeaderboardEntry[]>(async () => fetchLeaderboardEntries(this.context, this.leaderboardSize[0]));
         this.leaderboardPage = useState(1);
         this.subredditName = useState<string>(async () => (await context.reddit.getCurrentSubreddit()).name);
-        this.refresher = useInterval(async () => this.updateLeaderboard(), 60000 * 60);
+        this.refresher = useInterval(async () => this.updateLeaderboard(), 1000 * 60);
         this.refresher.start();
     }
 
@@ -65,23 +67,10 @@ export class LeaderboardState {
         return customPostData.numberOfUsers;
     }
 
-    async fetchLeaderboard () {
-        const leaderboard: LeaderboardEntry[] = [];
-        const items = await this.context.redis.zRange(POINTS_STORE_KEY, 0, this.leaderboardSize[0] - 1, { by: "score", reverse: true });
-        let rank = 1;
-        for (const item of items) {
-            leaderboard.push({
-                username: item.member,
-                score: item.score,
-                rank: rank++,
-            });
-        }
-
-        return leaderboard;
-    }
+   
 
     async updateLeaderboard () {
-        this.leaderboard = await this.fetchLeaderboard();
+        this.leaderboard = await fetchLeaderboardEntries(this.context, this.leaderboardSize[0]);
         this.refresher.start();
     }
 }

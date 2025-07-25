@@ -10,6 +10,7 @@ import { AppSetting, LeaderboardMode, TemplateDefaults } from "./settings.js";
 import { getSubredditName } from "./utility.js";
 import { StringLiteralLike } from "typescript";
 import { logger } from "./logger.js";
+import { LeaderboardState } from "./customPost/state.js";
 
 export const TIMEFRAMES = [
     "daily",
@@ -103,63 +104,73 @@ function expirationFor(timeframe: string): Date | undefined {
 }
 
 export async function updateLeaderboard(
-  event: ScheduledJobEvent<JSONObject | undefined>,
-  context: JobContext
+    event: ScheduledJobEvent<JSONObject | undefined>,
+    context: JobContext
 ) {
-  const settings = await context.settings.getAll();
-  const leaderboardMode = settings[AppSetting.LeaderboardMode] as string[] | undefined;
-  if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) return;
+    const settings = await context.settings.getAll();
+    const leaderboardMode = settings[AppSetting.LeaderboardMode] as
+        | string[]
+        | undefined;
+    if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) return;
 
-  const onlyShowAllTime = true;
-  // TODO: Implement this setting if it becomes possible
-  // const onlyShowAllTime =
-  //     (
-  //         settings[AppSetting.OnlyShowAllTimeScoreboard] as string[] | undefined
-  //     )?.[0] === "true";
+    const onlyShowAllTime = true;
+    // TODO: Implement this setting if it becomes possible
+    // const onlyShowAllTime =
+    //     (
+    //         settings[AppSetting.OnlyShowAllTimeScoreboard] as string[] | undefined
+    //     )?.[0] === "true";
 
-  const wikiPageName = (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
-  if (!wikiPageName.trim()) return;
+    const wikiPageName =
+        (settings[AppSetting.ScoreboardName] as string) ?? "leaderboards";
+    if (!wikiPageName.trim()) return;
 
-  const leaderboardSize = (settings[AppSetting.LeaderboardSize] as number) ?? 10;
-  const pointName = (settings[AppSetting.PointName] as string) ?? "point";
-  const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
-  const subredditName = await getSubredditName(context);
-  if (!subredditName) return;
+    const leaderboardSize =
+        (settings[AppSetting.LeaderboardSize] as number) ?? 10;
+    const pointName = (settings[AppSetting.PointName] as string) ?? "point";
+    const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
+    const subredditName = await getSubredditName(context);
+    if (!subredditName) return;
 
-  const formattedDate = format(new Date(), "MM/dd/yyyy HH:mm:ss");
-  let markdown = `# ${capitalize(pointName)}boards for r/${subredditName}\n`;
+    const formattedDate = format(new Date(), "MM/dd/yyyy HH:mm:ss");
+    let markdown = `# ${capitalize(pointName)}boards for r/${subredditName}\n`;
 
-  const helpPage = settings[AppSetting.LeaderboardHelpPage] as string | undefined;
-  const helpMessageTemplate = TemplateDefaults.LeaderboardHelpPageMessage as string;
-  if (helpPage?.trim()) {
-    markdown += `${helpMessageTemplate.replace("{{help}}", helpPage)}\n\n`;
-  }
-
-  const correctPermissionLevel =
-    leaderboardMode[0] === LeaderboardMode.Public
-      ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS
-      : WikiPagePermissionLevel.MODS_ONLY;
-
-  // Aggregate points by flair
-  // We'll gather all scores from Redis and map them by flair
-
-  // Map: flairText => total score
-  const flairScores = new Map<string, number>();
-
-  // Helper: fetch flair for a user safely
-  async function getUserFlairSafe(user: string): Promise<string> {
-    try {
-      const flair = await context.redis.hGet(`userflair:${subredditName}`, user);
-      return flair ?? "";
-    } catch (e) {
-      logger.warn(`Failed to fetch flair for user ${user}`, { error: e });
-      return "";
+    const helpPage = settings[AppSetting.LeaderboardHelpPage] as
+        | string
+        | undefined;
+    const helpMessageTemplate =
+        TemplateDefaults.LeaderboardHelpPageMessage as string;
+    if (helpPage?.trim()) {
+        markdown += `${helpMessageTemplate.replace("{{help}}", helpPage)}\n\n`;
     }
-  }
 
-  if (onlyShowAllTime) {
-    // Fetch the all-time leaderboard entries
-    const redisKey = leaderboardKey("alltime", subredditName);
+    const correctPermissionLevel =
+        leaderboardMode[0] === LeaderboardMode.Public
+            ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS
+            : WikiPagePermissionLevel.MODS_ONLY;
+
+    // Aggregate points by flair
+    // We'll gather all scores from Redis and map them by flair
+
+    // Map: flairText => total score
+    const flairScores = new Map<string, number>();
+
+    // Helper: fetch flair for a user safely
+    async function getUserFlairSafe(user: string): Promise<string> {
+        try {
+            const flair = await context.redis.hGet(
+                `userflair:${subredditName}`,
+                user
+            );
+            return flair ?? "";
+        } catch (e) {
+            logger.warn(`Failed to fetch flair for user ${user}`, { error: e });
+            return "";
+        }
+    }
+
+    if (onlyShowAllTime) {
+        // Fetch the all-time leaderboard entries
+        const redisKey = leaderboardKey("alltime", subredditName);
         const { markdown: tableMarkdown, scores } =
             await buildOrUpdateAllTimeLeaderboard(
                 context,
@@ -172,7 +183,7 @@ export async function updateLeaderboard(
 
         markdown += `\n\n${tableMarkdown}`;
         scores.push(...scores);
-
+        
         const expiry = expirationFor("alltime");
         if (expiry) {
             const ttl = Math.floor((expiry.getTime() - Date.now()) / 1000);
@@ -180,8 +191,8 @@ export async function updateLeaderboard(
                 await context.redis.expire(redisKey, ttl);
             }
         }
-  } else {
-    for (const timeframe of TIMEFRAMES) {
+    } else {
+        for (const timeframe of TIMEFRAMES) {
             let sectionMarkdown = "";
             let scores: { member: string; score: number }[] = [];
             const redisKey = leaderboardKey(timeframe, subredditName);
@@ -268,72 +279,88 @@ export async function updateLeaderboard(
                 }
             }
         }
-  }
-  // --- Wiki update + logging ---
-  let wikiUpdated = false;
-  let permissionsUpdated = false;
-
-  try {
-    const wikiPage = await context.reddit.getWikiPage(subredditName, wikiPageName);
-
-    const oldText = wikiPage.content;
-    const newText = markdown;
-
-    if (oldText !== newText) {
-      await context.reddit.updateWikiPage({
-        subredditName,
-        page: wikiPageName,
-        content: newText,
-        reason: `Updated ${formattedDate}`,
-      });
-      wikiUpdated = true;
-
-      // Truncate texts for logging
-      const maxLen = 200;
-      const truncatedOld = oldText.length > maxLen ? oldText.slice(0, maxLen) + "..." : oldText;
-      const truncatedNew = newText.length > maxLen ? newText.slice(0, maxLen) + "..." : newText;
-
-      logger.info(`✅ Wiki page content updated on r/${subredditName}/${wikiPageName}`, {
-        oldText: truncatedOld,
-        newText: truncatedNew,
-      });
     }
+    // --- Wiki update + logging ---
+    let wikiUpdated = false;
+    let permissionsUpdated = false;
 
-    const wikiSettings = await wikiPage.getSettings();
-    if (wikiSettings.permLevel !== correctPermissionLevel) {
-      await context.reddit.updateWikiPageSettings({
-        subredditName,
-        page: wikiPageName,
-        listed: true,
-        permLevel: correctPermissionLevel,
-      });
-      permissionsUpdated = true;
-      logger.info(
-        `✅ Wiki page permission level updated to ${correctPermissionLevel} on r/${subredditName}/${wikiPageName}`
-      );
-    }
+    try {
+        const wikiPage = await context.reddit.getWikiPage(
+            subredditName,
+            wikiPageName
+        );
 
-    if (!wikiUpdated && !permissionsUpdated) {
-      logger.info(`ℹ️ Wiki page on r/${subredditName}/${wikiPageName} is already up-to-date.`);
+        const oldText = wikiPage.content;
+        const newText = markdown;
+
+        if (oldText !== newText) {
+            await context.reddit.updateWikiPage({
+                subredditName,
+                page: wikiPageName,
+                content: newText,
+                reason: `Updated ${formattedDate}`,
+            });
+            wikiUpdated = true;
+
+            // Truncate texts for logging
+            const maxLen = 200;
+            const truncatedOld =
+                oldText.length > maxLen
+                    ? oldText.slice(0, maxLen) + "..."
+                    : oldText;
+            const truncatedNew =
+                newText.length > maxLen
+                    ? newText.slice(0, maxLen) + "..."
+                    : newText;
+
+            logger.info(
+                `✅ Wiki page content updated on r/${subredditName}/${wikiPageName}`,
+                {
+                    oldText: truncatedOld,
+                    newText: truncatedNew,
+                }
+            );
+        }
+
+        const wikiSettings = await wikiPage.getSettings();
+        if (wikiSettings.permLevel !== correctPermissionLevel) {
+            await context.reddit.updateWikiPageSettings({
+                subredditName,
+                page: wikiPageName,
+                listed: true,
+                permLevel: correctPermissionLevel,
+            });
+            permissionsUpdated = true;
+            logger.info(
+                `✅ Wiki page permission level updated to ${correctPermissionLevel} on r/${subredditName}/${wikiPageName}`
+            );
+        }
+
+        if (!wikiUpdated && !permissionsUpdated) {
+            logger.info(
+                `ℹ️ Wiki page on r/${subredditName}/${wikiPageName} is already up-to-date.`
+            );
+        }
+    } catch (e) {
+        // Wiki page does not exist, create it fresh
+        await context.reddit.createWikiPage({
+            subredditName,
+            page: wikiPageName,
+            content: markdown,
+            reason: `Initial setup`,
+        });
+        await context.reddit.updateWikiPageSettings({
+            subredditName,
+            page: wikiPageName,
+            listed: true,
+            permLevel: correctPermissionLevel,
+        });
+        wikiUpdated = true;
+        permissionsUpdated = true;
+        logger.info(
+            `✅ Wiki page created and permissions set on r/${subredditName}/${wikiPageName}`
+        );
     }
-  } catch (e) {
-    // Wiki page does not exist, create it fresh
-    await context.reddit.createWikiPage({
-      subredditName,
-      page: wikiPageName,
-      content: markdown,
-      reason: `Initial setup`,
-    });
-    await context.reddit.updateWikiPageSettings({
-      subredditName,
-      page: wikiPageName,
-      listed: true,
-      permLevel: correctPermissionLevel,
-    });
-    wikiUpdated = true;
-    permissionsUpdated = true;
-    logger.info(`✅ Wiki page created and permissions set on r/${subredditName}/${wikiPageName}`);
-  }
 }
 
 export async function buildOrUpdateDailyLeaderboard(

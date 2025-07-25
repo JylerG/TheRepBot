@@ -37,7 +37,7 @@ export async function replacePlaceholders(template: string, placeholders: {
     let result = template;
     result = replaceAll(result, "{{awardee}}", placeholders.awardee);
     result = replaceAll(result, "{{awarder}}", placeholders.awarder);
-    result = replaceAll(result, "{{point}}", placeholders.point);
+    result = replaceAll(result, "{{name}}", placeholders.point);
     result = replaceAll(result, "{{total}}", placeholders.total.toString());
     result = replaceAll(result, "{{symbol}}", placeholders.symbol);
     result = replaceAll(result, "{{scoreboard}}", placeholders.scoreboard);

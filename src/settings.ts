@@ -47,7 +47,7 @@ export enum AppSetting {
     SetPostFlairCSSClass = "setPostFlairOnThanksCSSClass",
     SetPostFlairTemplate = "setPostFlairOnThanksTemplate",
     LeaderboardMode = "leaderboardMode",
-    ScoreboardLink = "scoreboardLink",
+    ScoreboardName = "ScoreboardName",
     LeaderboardSize = "leaderboardSize",
     LeaderboardHelpPage = "leaderboardHelpPage",
     PostFlairTextToIgnore = "postFlairTextToIgnore",
@@ -84,12 +84,12 @@ export enum TemplateDefaults {
     ModOnlyDisallowedMessage = "Only moderators are allowed to award points.",
     ApprovedOnlyDisallowedMessage = "Only moderators and approved users can award points.",
     DuplicateAwardMessage = "This user has already been awarded for this comment.",
-    SelfAwardMessage = "You can't award yourself a {name}.",
-    BotAwardMessage = "You can't award the bot a {name}.",
+    SelfAwardMessage = "You can't award yourself a {{name}}.",
+    BotAwardMessage = "You can't award the bot a {{name}}.",
     UsersWhoCannotBeAwardedPointsMessage = "The user you are trying to award {{name}}s to is not allowed to be awarded points. Please contact the moderators if you have any questions.",
     InvalidPostMessage = "Points cannot be awarded on this post because the recipient is suspended or shadowbanned.",
     NotifyOnSelfAwardTemplate = "Hello {{awarder}}, you cannot award a {{name}} to yourself.",
-    NotifyOnSuccessTemplate = "+1 {point} to u/{{awardee}}.\n\n---\n\n^(I am a bot - please contact the mods with any questions)",
+    NotifyOnSuccessTemplate = "+1 {{point}} to u/{{awardee}}.",
     NotifyAwardedUserTemplate = "Hello {{awardee}},\n\nYou have been awarded a point for your contribution! New score: {{score}}",
     NotifyOnSuperuserTemplate = 'Hello {{awardee}},\n\nNow that you have reached {{threshold}} points you can now award points yourself, even if normal users do not have permission to. Please use the command "{{command}}" if you\'d like to do this.',
 }
@@ -460,7 +460,7 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.DuplicateAwardMessage,
                 label: "Duplicate Award Message",
                 helpText:
-                    "Shown when someone tries to award a post they've already awarded. You can use {{awardee}} to get the person being awarded's username, {{total}} to get the user's total points, {{name}} to get the point name.",
+                    "Shown when someone tries to award a post they've already awarded. You can use {{awardee}} to get the person being awarded's username, {{name}} to get the point name, {{symbol}} to get the point symbol.",
                 defaultValue:
                     "This user has already been awarded for this comment.",
             },
@@ -573,7 +573,7 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.LeaderboardSize,
                 type: "number",
                 label: "Leaderboard Size",
-                helpText: "Number of users to show on the leaderboard.",
+                helpText: "Number of users to show on the leaderboard (1-100).",
                 defaultValue: 50,
                 onValidate: ({ value }) => {
                     if (value !== undefined && (value < 1 || value > 100)) {
@@ -582,7 +582,7 @@ export const appSettings: SettingsFormField[] = [
                 },
             },
             {
-                name: AppSetting.ScoreboardLink,
+                name: AppSetting.ScoreboardName,
                 type: "string",
                 label: "Scoreboard Wiki Name",
                 helpText:

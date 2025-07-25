@@ -44,6 +44,8 @@ This app is open source and licenced under the BSD 3-Clause Licence. You can fin
 NOTE: If you update settings, you will have to uninstall to be able to reimplement the content that you want in whatever you are editing.
 
 ## Version History
+### 0.0.14
+* Try to make the leaderboard post accurately display the top scoring users
 ### 0.0.13
 * Make it so only the all time leaderboard appears (can't figure out how to do every leaderboard)
 * Make it so that flair is properly set

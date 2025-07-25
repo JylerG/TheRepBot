@@ -1,9 +1,11 @@
 import { Devvit } from "@devvit/public-api";
+import { AppSetting } from "../settings.js";
 
 interface LeaderboardItem {
     username: string;
     score: number;
     rank: number;
+    pointName: string;
     navigateToProfile?: () => void | Promise<void>;
 }
 
@@ -16,7 +18,7 @@ export const LeaderboardRow = (props: LeaderboardItem) => (
             <text>
                 {props.score}
                 {" "}
-                points
+                {props.pointName}
             </text>
         </zstack>
         <spacer size="small" />

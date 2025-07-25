@@ -8,11 +8,10 @@ import {
     MenuItemOnPressEvent,
 } from "@devvit/public-api";
 import { LeaderboardRow } from "./leaderboardRow.js";
-import { LeaderboardState } from "./state.js";
+import { LeaderboardEntry, LeaderboardState } from "./state.js";
 import { customPostFormKey } from "../main.js";
 import { previewPost } from "./preview.js";
 import { getSubredditName } from "../utility.js";
-import { logger } from "../logger.js";
 
 export const customPostForm: Form = {
     title: "Create Leaderboard Post",
@@ -27,7 +26,7 @@ export const customPostForm: Form = {
             label: "Number of users to include",
             name: "numberOfUsers",
             type: "number",
-            defaultValue: 10,
+            defaultValue: 20,
         },
         {
             label: "Sticky post",
@@ -47,6 +46,7 @@ export const customPostForm: Form = {
 export interface CustomPostData {
     postId: string;
     numberOfUsers: number;
+    entries?: LeaderboardEntry[];
 }
 
 export async function createCustomPostFormHandler(
@@ -55,57 +55,62 @@ export async function createCustomPostFormHandler(
 ) {
     const redisKey = "customPostData";
 
-    try {
-        if (event.values.removeExisting) {
-            const customPostData = await context.redis.get(redisKey);
-
-            if (customPostData) {
-                const data = JSON.parse(customPostData) as CustomPostData;
-                const post = await context.reddit.getPostById(data.postId);
-                await post.remove();
-            }
+    if (event.values.removeExisting) {
+        const customPostData = await context.redis.get(redisKey);
+        if (customPostData) {
+            const data = JSON.parse(customPostData) as CustomPostData;
+            const post = await context.reddit.getPostById(data.postId);
+            await post.remove();
         }
-
-        let postTitle = event.values.postTitle as string | undefined;
-        postTitle ??= "TheRepBot High Scores";
-
-        const subredditName = await getSubredditName(context);
-
-        const post = await context.reddit.submitPost({
-            subredditName,
-            title: postTitle,
-            preview: previewPost,
-        });
-
-        const newData: CustomPostData = {
-            postId: post.id,
-            numberOfUsers:
-                (event.values.numberOfUsers as number | undefined) ?? 20,
-        };
-
-        await context.redis.set(redisKey, JSON.stringify(newData));
-
-        if (event.values.stickyPost) {
-            await post.sticky();
-        }
-
-        context.ui.showToast({
-            text: "Leaderboard post has been created successfully",
-            appearance: "success",
-        });
-
-        context.ui.navigateTo(post);
-    } catch (err) {
-        logger.error(`Error trying to create leaderboard post: ${err}`)
-        context.ui.showToast({
-            text: "Failed to create leaderboard post. See logs.",
-            appearance: "neutral",
-        });
     }
+
+    let postTitle = event.values.postTitle as string | undefined;
+    postTitle ??= "TheRepBot High Scores";
+
+    const subredditName = await getSubredditName(context);
+
+    const post = await context.reddit.submitPost({
+        subredditName,
+        title: postTitle,
+        preview: previewPost,
+    });
+
+    const newData: CustomPostData = {
+        postId: post.id,
+        numberOfUsers: (event.values.numberOfUsers as number | undefined) ?? 20,
+    };
+
+    await context.redis.set(redisKey, JSON.stringify(newData));
+
+    if (event.values.stickyPost) {
+        await post.sticky();
+    }
+
+    context.ui.showToast({
+        text: "Leaderboard post has been created successfully",
+        appearance: "success",
+    });
+    context.ui.navigateTo(post);
 }
 
-export function createCustomPostMenuHandler (_: MenuItemOnPressEvent, context: Context) {
+export function createCustomPostMenuHandler(
+    _: MenuItemOnPressEvent,
+    context: Context
+) {
     context.ui.showForm(customPostFormKey);
+}
+
+function pluralize(word: string): string {
+    if (word.endsWith("s")) return word;
+
+    const lowerWord = word.toLowerCase();
+    if (lowerWord.match(/[^aeiou]y$/)) {
+        return word.slice(0, -1) + "ies";
+    }
+    if (lowerWord.match(/(s|x|z|ch|sh)$/)) {
+        return word + "es";
+    }
+    return word + "s";
 }
 
 export const leaderboardCustomPost: CustomPostType = {
@@ -114,12 +119,29 @@ export const leaderboardCustomPost: CustomPostType = {
     height: "tall",
     render: (context) => {
         const state = new LeaderboardState(context);
-
+        
         return (
             <blocks height="tall">
-                <vstack minHeight="100%" minWidth="100%" width="100%" alignment="top center" gap="small" grow>
-                    <hstack alignment="center middle" minWidth="100%" border="thick" padding="small" gap="large">
-                        <image imageHeight={48} imageWidth={48} url="podium.png" />
+                <vstack
+                    minHeight="100%"
+                    minWidth="100%"
+                    width="100%"
+                    alignment="top center"
+                    gap="small"
+                    grow
+                >
+                    <hstack
+                        alignment="center middle"
+                        minWidth="100%"
+                        border="thick"
+                        padding="small"
+                        gap="large"
+                    >
+                        <image
+                            imageHeight={48}
+                            imageWidth={48}
+                            url="podium.png"
+                        />
                         <vstack alignment="center middle" grow>
                             <text style="heading">Top scoring users</text>
                         </vstack>
@@ -127,18 +149,44 @@ export const leaderboardCustomPost: CustomPostType = {
                             <button
                                 icon="help"
                                 onPress={() => {
-                                    state.context.ui.navigateTo(state.leaderboardHelpUrl[0]);
+                                    state.context.ui.navigateTo(
+                                        state.leaderboardHelpUrl[0]
+                                    );
                                 }}
-                            />
+                            ></button>
                         ) : (
-                            <image imageHeight={48} imageWidth={48} url="podium.png" />
+                            <image
+                                imageHeight={48}
+                                imageWidth={48}
+                                url="podium.png"
+                            />
                         )}
                     </hstack>
-                    <vstack alignment="middle center" padding="medium" gap="medium" width="100%" grow>
-                        <vstack alignment="top start" gap="small" width="100%" grow>
+                    <vstack
+                        alignment="middle center"
+                        padding="medium"
+                        gap="medium"
+                        width="100%"
+                        grow
+                    >
+                        <vstack
+                            alignment="top start"
+                            gap="small"
+                            width="100%"
+                            grow
+                        >
+                            
+                            <button
+                                onPress={async () => {
+                                    await state.updateLeaderboard();
+                                }}
+                            >
+                                🔄 Refresh Leaderboard
+                            </button>
                             {state.leaderboard
                                 .slice(
-                                    (state.page - 1) * state.leaderboardPageSize,
+                                    (state.page - 1) *
+                                        state.leaderboardPageSize,
                                     state.page * state.leaderboardPageSize
                                 )
                                 .map((entry) => (
@@ -146,8 +194,13 @@ export const leaderboardCustomPost: CustomPostType = {
                                         username={entry.username}
                                         score={entry.score}
                                         rank={entry.rank}
+                                        pointName={pluralize(
+                                            entry.pointName ?? "point"
+                                        )}
                                         navigateToProfile={() => {
-                                            context.ui.navigateTo(`https://reddit.com/u/${entry.username}`);
+                                            context.ui.navigateTo(
+                                                `https://reddit.com/u/${entry.username}`
+                                            );
                                         }}
                                     />
                                 ))}

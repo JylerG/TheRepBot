@@ -35,7 +35,7 @@ export async function onAppInstallOrUpgrade (_: AppInstall | AppUpgrade, context
         }
     }
 
-    if (!hasLeaderboardData) {
+    if (hasLeaderboardData) {
         logger.info("📈 Leaderboard contains data — skipping updateLeaderboard job.");
         
     } else {
