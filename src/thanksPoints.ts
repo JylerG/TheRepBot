@@ -63,48 +63,65 @@ function formatMessage(
 }
 
 async function getCurrentScore(
-    user: User,
-    context: TriggerContext,
-    settings: SettingsValues
-): Promise<{ currentScore: number; flairScoreIsNaN: boolean }> {
-    const subredditName = await getSubredditName(context);
-    const userFlair = await user.getUserFlairBySubreddit(subredditName);
+  user: User,
+  context: TriggerContext,
+  settings: SettingsValues
+): Promise<{
+  currentScore: number;
+  flairScoreIsNaN: boolean;
+  flairText: string;
+  flairSymbol: string;
+}> {
+  const subredditName = await getSubredditName(context);
+  const userFlair = await user.getUserFlairBySubreddit(subredditName);
 
-    let scoreFromRedis: number | undefined;
-    try {
-        scoreFromRedis =
-            (await context.redis.zScore(POINTS_STORE_KEY, user.username)) ?? 0;
-    } catch {
-        scoreFromRedis = 0;
-    }
+  let scoreFromRedis: number | undefined;
+  try {
+    scoreFromRedis = (await context.redis.zScore(POINTS_STORE_KEY, user.username)) ?? 0;
+  } catch {
+    scoreFromRedis = 0;
+  }
 
-    let scoreFromFlair: number;
-    const numberRegex = /^\d+$/;
+  const flairTextRaw = userFlair?.flairText ?? "";
+  let scoreFromFlair: number;
+  const numberRegex = /^\d+$/;
 
-    if (!userFlair?.flairText || userFlair.flairText === "-") {
-        scoreFromFlair = 0;
-    } else if (!numberRegex.test(userFlair.flairText)) {
-        scoreFromFlair = NaN;
+  if (!flairTextRaw || flairTextRaw === "-") {
+    scoreFromFlair = 0;
+  } else {
+    // Extract numeric part from start of flair text (e.g. "17⭐" -> "17")
+    const numericMatch = flairTextRaw.match(/^\d+/);
+    if (numericMatch && numberRegex.test(numericMatch[0])) {
+      scoreFromFlair = parseInt(numericMatch[0], 10);
     } else {
-        scoreFromFlair = parseInt(userFlair.flairText);
+      scoreFromFlair = NaN;
     }
+  }
 
-    const flairScoreIsNaN = isNaN(scoreFromFlair);
+  const flairScoreIsNaN = isNaN(scoreFromFlair);
 
-    if (settings[AppSetting.PrioritiseScoreFromFlair] && !flairScoreIsNaN) {
-        return { currentScore: scoreFromFlair, flairScoreIsNaN };
-    }
+  // Extract symbol by removing the numeric part from flair text, trim whitespace
+  const flairSymbol = flairTextRaw.replace(/^\d+/, "").trim();
 
+  if (settings[AppSetting.PrioritiseScoreFromFlair] && !flairScoreIsNaN) {
     return {
-        currentScore:
-            !flairScoreIsNaN && scoreFromFlair > scoreFromRedis
-                ? scoreFromFlair
-                : scoreFromRedis,
-        flairScoreIsNaN,
+      currentScore: scoreFromFlair,
+      flairScoreIsNaN,
+      flairText: flairTextRaw,
+      flairSymbol,
     };
+  }
+
+  return {
+    currentScore:
+      !flairScoreIsNaN && scoreFromFlair > scoreFromRedis ? scoreFromFlair : scoreFromRedis,
+    flairScoreIsNaN,
+    flairText: flairTextRaw,
+    flairSymbol,
+  };
 }
 
-async function setUserScore(
+export async function setUserScore(
     username: string,
     newScore: number,
     flairScoreIsNaN: boolean,
@@ -117,12 +134,6 @@ async function setUserScore(
     for (const timeframe of TIMEFRAMES) {
         const redisKey = leaderboardKey(timeframe, subredditName);
         await context.redis.zAdd(redisKey, {
-            member: username,
-            score: newScore,
-        });
-        logger.debug(`✅ Stored score in Redis`, {
-            timeframe,
-            redisKey,
             member: username,
             score: newScore,
         });
@@ -149,8 +160,9 @@ async function setUserScore(
 
     const shouldSetUserFlair =
         flairSetting !== ExistingFlairOverwriteHandling.NeverSet;
-
-    if (!shouldSetUserFlair) return;
+    if (!shouldSetUserFlair) {
+        return;
+    }
 
     // ✅ Read flair styling preferences
     let cssClass = settings[AppSetting.CSSClass] as string | undefined;
@@ -163,27 +175,18 @@ async function setUserScore(
     if (cssClass && flairTemplate) cssClass = undefined; // template wins
 
     // ✅ Try to get user's score from their wiki page
-    let userScoreFromWiki: number | null = null;
-    const userWikiPageName = `user/${username}`;
-
     try {
         const userPage = await context.reddit.getWikiPage(
             subredditName,
-            userWikiPageName
+            `user/${username}`
         );
         const wikiContent = userPage.content ?? "";
-
-        // Optional: more robust markdown parsing can be used
         const scoreMatch = wikiContent.match(/Total:\s*(\d+)/i);
-        if (scoreMatch) {
-            userScoreFromWiki = parseInt(scoreMatch[1], 10);
+        if (scoreMatch && !isNaN(parseInt(scoreMatch[1], 10))) {
+            newScore = parseInt(scoreMatch[1], 10);
         }
-    } catch (err) {
-        logger.warn("⚠️ Could not read user wiki page for flair setting", {
-            subredditName,
-            username,
-            err,
-        });
+    } catch {
+        // ignore if missing
     }
 
     // ✅ Format flair text
@@ -194,25 +197,41 @@ async function setUserScore(
             flairText = `${newScore}${pointSymbol}`;
             break;
         case ExistingFlairOverwriteHandling.OverwriteNumeric:
-            flairText = `${newScore}`
+            flairText = `${newScore}`;
             break;
     }
 
-    // ✅ Set user flair
+    // ✅ Get the existing flair to compare
+    let oldFlairText = "";
+    try {
+        const userObj = await context.reddit.getUserByUsername(username);
+        const flairInfo = await userObj?.getUserFlairBySubreddit(subredditName);
+        oldFlairText = flairInfo?.flairText ?? "";
+    } catch {
+        // ignore
+    }
+
+    const flairChanged = oldFlairText !== flairText;
+
     await context.reddit.setUserFlair({
-        subredditName,
-        username,
-        cssClass,
+        subredditName: subredditName,
+        username: username,
+        cssClass: cssClass,
         flairTemplateId: flairTemplate,
         text: flairText,
     });
 
-    logger.debug(`✅ Set user flair`, {
+    await context.redis.hSet(`userflair:${subredditName}`, {
+        [username]: flairText,
+    });
+
+    logger.debug("✅ Setting user flair", {
         username,
-        flairText,
-        flairSetting,
+        flairChanged,
+        oldText: oldFlairText,
+        newText: flairText,
+        flairTemplateId: flairTemplate,
         cssClass,
-        flairTemplate,
     });
 }
 
@@ -257,20 +276,20 @@ export async function handleThanksEvent(
     event: CommentSubmit | CommentUpdate,
     context: TriggerContext
 ) {
-    logger.debug("✅ Event triggered", {
-        commentId: event.comment?.id,
-        postId: event.post?.id,
-        author: event.author?.name,
-        subreddit: event.subreddit?.name,
-    });
+    // logger.debug("✅ Event triggered", {
+    //     commentId: event.comment?.id,
+    //     postId: event.post?.id,
+    //     author: event.author?.name,
+    //     subreddit: event.subreddit?.name,
+    // });
 
     if (!event.comment || !event.post || !event.author || !event.subreddit) {
-        logger.warn("❌ Missing comment, post, author, or subreddit");
+        // logger.warn("❌ Missing comment, post, author, or subreddit");
         return;
     }
 
     if (isLinkId(event.comment.parentId)) {
-        logger.debug("❌ Parent ID is a link — ignoring.");
+        // logger.debug("❌ Parent ID is a link — ignoring.");
         return;
     }
 
@@ -312,9 +331,9 @@ export async function handleThanksEvent(
         .includes(authorName);
 
     if (userCannotAwardPoints) {
-        logger.warn("❌ Author is disallowed from awarding points", {
-            authorName,
-        });
+        // logger.warn("❌ Author is disallowed from awarding points", {
+        //     authorName,
+        // });
 
         try {
             const template =
@@ -408,13 +427,13 @@ export async function handleThanksEvent(
             break;
     }
 
-    logger.debug("✅ Permission Check", {
-        accessControl,
-        isMod,
-        isApprovedUser,
-        isOP,
-        hasPermission,
-    });
+    // logger.debug("✅ Permission Check", {
+    //     accessControl,
+    //     isMod,
+    //     isApprovedUser,
+    //     isOP,
+    //     hasPermission,
+    // });
 
     if (!hasPermission) {
         logger.warn("❌ Author does not have permission");
@@ -438,9 +457,9 @@ export async function handleThanksEvent(
 
     if (!containsUserCommand && !containsModCommand) return;
 
-    logger.info("✅ Awarded Comment", {
-        commentBody: event.comment.body,
-    });
+    // logger.info("✅ Awarded Comment", {
+    //     commentBody: event.comment.body,
+    // });
 
     const parentComment = await context.reddit.getCommentById(
         event.comment.parentId
@@ -503,6 +522,10 @@ export async function handleThanksEvent(
     );
     const newScore = currentScore + 1;
 
+    logger.debug(
+        `🎯 Flair updated for u/${parentComment.authorName}: "${currentScore}" → "${newScore}"`
+    );
+    
     await setUserScore(
         parentComment.authorName,
         newScore,
@@ -511,9 +534,7 @@ export async function handleThanksEvent(
         settings
     );
 
-    // **Mark this award in Redis to prevent duplicates**
-    // Set expiry to 30 days (adjust as needed)
-    await context.redis.set(redisKey, "1");
+    
 
     // Continue with notification and leaderboard update...
 

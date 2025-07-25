@@ -19,7 +19,10 @@ export const TIMEFRAMES = [
     "alltime",
 ] as const;
 
-export function leaderboardKey(timeframe: string, subredditName?: string): string {
+export function leaderboardKey(
+    timeframe: string,
+    subredditName?: string
+): string {
     const now = new Date();
     const safeSubreddit = subredditName ?? "subreddit"; // fallback if not passed
 
@@ -30,13 +33,17 @@ export function leaderboardKey(timeframe: string, subredditName?: string): strin
         }
         case "weekly": {
             const startOfWeek = new Date(now);
-            startOfWeek.setUTCDate(startOfWeek.getUTCDate() - startOfWeek.getUTCDay());
+            startOfWeek.setUTCDate(
+                startOfWeek.getUTCDate() - startOfWeek.getUTCDay()
+            );
             startOfWeek.setUTCHours(0, 0, 0, 0);
             const date = startOfWeek.toISOString().split("T")[0]; // YYYY-MM-DD
             return `thanksPointsStore:${safeSubreddit}:weekly:${date}`;
         }
         case "monthly": {
-            const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+            const startOfMonth = new Date(
+                Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
+            );
             const date = startOfMonth.toISOString().split("T")[0]; // YYYY-MM-01
             return `thanksPointsStore:${safeSubreddit}:monthly:${date}`;
         }
@@ -96,56 +103,63 @@ function expirationFor(timeframe: string): Date | undefined {
 }
 
 export async function updateLeaderboard(
-    event: ScheduledJobEvent<JSONObject | undefined>,
-    context: JobContext
+  event: ScheduledJobEvent<JSONObject | undefined>,
+  context: JobContext
 ) {
-    const settings = await context.settings.getAll();
-    const leaderboardMode = settings[AppSetting.LeaderboardMode] as
-        | string[]
-        | undefined;
-    if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) return;
+  const settings = await context.settings.getAll();
+  const leaderboardMode = settings[AppSetting.LeaderboardMode] as string[] | undefined;
+  if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) return;
 
-    const onlyShowAllTime = true;
-    // TODO: Re-enable this setting if implementability is made possible
-    // const onlyShowAllTime =
-    //     (
-    //         settings[AppSetting.OnlyShowAllTimeScoreboard] as
-    //             | string[]
-    //             | undefined
-    //     )?.[0] === "true";
+  const onlyShowAllTime = true;
+  // TODO: Implement this setting if it becomes possible
+  // const onlyShowAllTime =
+  //     (
+  //         settings[AppSetting.OnlyShowAllTimeScoreboard] as string[] | undefined
+  //     )?.[0] === "true";
 
-    const wikiPageName =
-        (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
-    if (!wikiPageName.trim()) return;
+  const wikiPageName = (settings[AppSetting.ScoreboardLink] as string) ?? "leaderboards";
+  if (!wikiPageName.trim()) return;
 
-    const leaderboardSize =
-        (settings[AppSetting.LeaderboardSize] as number) ?? 10;
-    const pointName = (settings[AppSetting.PointName] as string) ?? "point";
-    const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
-    const subredditName = await getSubredditName(context);
-    if (!subredditName) return;
+  const leaderboardSize = (settings[AppSetting.LeaderboardSize] as number) ?? 10;
+  const pointName = (settings[AppSetting.PointName] as string) ?? "point";
+  const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
+  const subredditName = await getSubredditName(context);
+  if (!subredditName) return;
 
-    const formattedDate = format(new Date(), "MM/dd/yyyy HH:mm:ss");
-    let markdown = `# ${capitalize(pointName)}boards for r/${subredditName}\n`;
+  const formattedDate = format(new Date(), "MM/dd/yyyy HH:mm:ss");
+  let markdown = `# ${capitalize(pointName)}boards for r/${subredditName}\n`;
 
-    const helpPage = settings[AppSetting.LeaderboardHelpPage] as
-        | string
-        | undefined;
-    const helpMessageTemplate =
-        TemplateDefaults.LeaderboardHelpPageMessage as string;
-    if (helpPage?.trim()) {
-        markdown += `${helpMessageTemplate.replace("{{help}}", helpPage)}\n\n`;
+  const helpPage = settings[AppSetting.LeaderboardHelpPage] as string | undefined;
+  const helpMessageTemplate = TemplateDefaults.LeaderboardHelpPageMessage as string;
+  if (helpPage?.trim()) {
+    markdown += `${helpMessageTemplate.replace("{{help}}", helpPage)}\n\n`;
+  }
+
+  const correctPermissionLevel =
+    leaderboardMode[0] === LeaderboardMode.Public
+      ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS
+      : WikiPagePermissionLevel.MODS_ONLY;
+
+  // Aggregate points by flair
+  // We'll gather all scores from Redis and map them by flair
+
+  // Map: flairText => total score
+  const flairScores = new Map<string, number>();
+
+  // Helper: fetch flair for a user safely
+  async function getUserFlairSafe(user: string): Promise<string> {
+    try {
+      const flair = await context.redis.hGet(`userflair:${subredditName}`, user);
+      return flair ?? "";
+    } catch (e) {
+      logger.warn(`Failed to fetch flair for user ${user}`, { error: e });
+      return "";
     }
+  }
 
-    const correctPermissionLevel =
-        leaderboardMode[0] === LeaderboardMode.Public
-            ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS
-            : WikiPagePermissionLevel.MODS_ONLY;
-
-    const allScores: { member: string; score: number }[] = [];
-
-    if (onlyShowAllTime) {
-        const redisKey = leaderboardKey("alltime", subredditName);
+  if (onlyShowAllTime) {
+    // Fetch the all-time leaderboard entries
+    const redisKey = leaderboardKey("alltime", subredditName);
         const { markdown: tableMarkdown, scores } =
             await buildOrUpdateAllTimeLeaderboard(
                 context,
@@ -157,7 +171,7 @@ export async function updateLeaderboard(
             );
 
         markdown += `\n\n${tableMarkdown}`;
-        allScores.push(...scores);
+        scores.push(...scores);
 
         const expiry = expirationFor("alltime");
         if (expiry) {
@@ -166,8 +180,8 @@ export async function updateLeaderboard(
                 await context.redis.expire(redisKey, ttl);
             }
         }
-    } else {
-        for (const timeframe of TIMEFRAMES) {
+  } else {
+    for (const timeframe of TIMEFRAMES) {
             let sectionMarkdown = "";
             let scores: { member: string; score: number }[] = [];
             const redisKey = leaderboardKey(timeframe, subredditName);
@@ -236,6 +250,7 @@ export async function updateLeaderboard(
                 default:
                     throw new Error(`Unknown timeframe: ${timeframe}`);
             }
+
             if (timeframe !== "alltime") {
                 markdown += `\n\n## ${capitalize(
                     timeframe
@@ -243,7 +258,7 @@ export async function updateLeaderboard(
             } else {
                 markdown += `\n\n## All Time\n${sectionMarkdown}`;
             }
-            allScores.push(...scores);
+            scores.push(...scores);
 
             const expiry = expirationFor(timeframe);
             if (expiry) {
@@ -253,68 +268,72 @@ export async function updateLeaderboard(
                 }
             }
         }
+  }
+  // --- Wiki update + logging ---
+  let wikiUpdated = false;
+  let permissionsUpdated = false;
+
+  try {
+    const wikiPage = await context.reddit.getWikiPage(subredditName, wikiPageName);
+
+    const oldText = wikiPage.content;
+    const newText = markdown;
+
+    if (oldText !== newText) {
+      await context.reddit.updateWikiPage({
+        subredditName,
+        page: wikiPageName,
+        content: newText,
+        reason: `Updated ${formattedDate}`,
+      });
+      wikiUpdated = true;
+
+      // Truncate texts for logging
+      const maxLen = 200;
+      const truncatedOld = oldText.length > maxLen ? oldText.slice(0, maxLen) + "..." : oldText;
+      const truncatedNew = newText.length > maxLen ? newText.slice(0, maxLen) + "..." : newText;
+
+      logger.info(`✅ Wiki page content updated on r/${subredditName}/${wikiPageName}`, {
+        oldText: truncatedOld,
+        newText: truncatedNew,
+      });
     }
 
-    // Build user pages once per unique user
-    const uniqueUsers = new Map<string, number>();
-    for (const { member, score } of allScores) {
-        if (
-            !uniqueUsers.has(member) ||
-            score > (uniqueUsers.get(member) ?? 0)
-        ) {
-            uniqueUsers.set(member, score);
-        }
+    const wikiSettings = await wikiPage.getSettings();
+    if (wikiSettings.permLevel !== correctPermissionLevel) {
+      await context.reddit.updateWikiPageSettings({
+        subredditName,
+        page: wikiPageName,
+        listed: true,
+        permLevel: correctPermissionLevel,
+      });
+      permissionsUpdated = true;
+      logger.info(
+        `✅ Wiki page permission level updated to ${correctPermissionLevel} on r/${subredditName}/${wikiPageName}`
+      );
     }
 
-    for (const [member, score] of uniqueUsers.entries()) {
-        await buildOrUpdateUserPage(context, {
-            member,
-            score,
-            subredditName,
-            pointName,
-            pointSymbol,
-            formattedDate,
-            correctPermissionLevel,
-        });
+    if (!wikiUpdated && !permissionsUpdated) {
+      logger.info(`ℹ️ Wiki page on r/${subredditName}/${wikiPageName} is already up-to-date.`);
     }
-
-    try {
-        const wikiPage = await context.reddit.getWikiPage(
-            subredditName,
-            wikiPageName
-        );
-        if (wikiPage.content !== markdown) {
-            await context.reddit.updateWikiPage({
-                subredditName,
-                page: wikiPageName,
-                content: markdown,
-                reason: `Updated ${formattedDate}`,
-            });
-        }
-
-        const wikiSettings = await wikiPage.getSettings();
-        if (wikiSettings.permLevel !== correctPermissionLevel) {
-            await context.reddit.updateWikiPageSettings({
-                subredditName,
-                page: wikiPageName,
-                listed: true,
-                permLevel: correctPermissionLevel,
-            });
-        }
-    } catch {
-        await context.reddit.createWikiPage({
-            subredditName,
-            page: wikiPageName,
-            content: markdown,
-            reason: `Initial setup`,
-        });
-        await context.reddit.updateWikiPageSettings({
-            subredditName,
-            page: wikiPageName,
-            listed: true,
-            permLevel: correctPermissionLevel,
-        });
-    }
+  } catch (e) {
+    // Wiki page does not exist, create it fresh
+    await context.reddit.createWikiPage({
+      subredditName,
+      page: wikiPageName,
+      content: markdown,
+      reason: `Initial setup`,
+    });
+    await context.reddit.updateWikiPageSettings({
+      subredditName,
+      page: wikiPageName,
+      listed: true,
+      permLevel: correctPermissionLevel,
+    });
+    wikiUpdated = true;
+    permissionsUpdated = true;
+    logger.info(`✅ Wiki page created and permissions set on r/${subredditName}/${wikiPageName}`);
+  }
 }
 
 export async function buildOrUpdateDailyLeaderboard(
@@ -339,12 +358,11 @@ export async function buildOrUpdateDailyLeaderboard(
     );
 
     logger.debug("📊 Daily Leaderboard Fetched", {
-    timeframe: "daily",
-    redisKey,
-    scoresPreview: scores.slice(0, 10),
-    totalScores: scores.length,
-});
-
+        timeframe: "daily",
+        redisKey,
+        scoresPreview: scores.slice(0, 10),
+        totalScores: scores.length,
+    });
 
     let markdown = `| Rank | User | ${capitalize(pointName)}${
         pointName.endsWith("s") ? "" : "s"
@@ -407,12 +425,11 @@ export async function buildOrUpdateWeeklyLeaderboard(
     );
 
     logger.debug("📊 Weekly Leaderboard Fetched", {
-    timeframe: "weekly",
-    redisKey,
-    scoresPreview: scores.slice(0, 10),
-    totalScores: scores.length,
-});
-
+        timeframe: "weekly",
+        redisKey,
+        scoresPreview: scores.slice(0, 10),
+        totalScores: scores.length,
+    });
 
     let markdown = `| Rank | User | ${capitalize(pointName)}${
         pointName.endsWith("s") ? "" : "s"
@@ -469,12 +486,11 @@ export async function buildOrUpdateMonthlyLeaderboard(
     );
 
     logger.debug("📊 Monthly Leaderboard Fetched", {
-    timeframe: "monthly",
-    redisKey,
-    scoresPreview: scores.slice(0, 10),
-    totalScores: scores.length,
-});
-
+        timeframe: "monthly",
+        redisKey,
+        scoresPreview: scores.slice(0, 10),
+        totalScores: scores.length,
+    });
 
     let markdown = `| Rank | User | ${capitalize(pointName)}${
         pointName.endsWith("s") ? "" : "s"
@@ -519,7 +535,6 @@ export async function buildOrUpdateYearlyLeaderboard(
     const now = new Date();
     const year = now.getUTCFullYear();
 
-
     const scores = await context.redis.zRange(
         redisKey,
         0,
@@ -531,12 +546,11 @@ export async function buildOrUpdateYearlyLeaderboard(
     );
 
     logger.debug("📊 Yearly Leaderboard Fetched", {
-    timeframe: "yearly",
-    redisKey,
-    scoresPreview: scores.slice(0, 10),
-    totalScores: scores.length,
-});
-
+        timeframe: "yearly",
+        redisKey,
+        scoresPreview: scores.slice(0, 10),
+        totalScores: scores.length,
+    });
 
     let markdown = `| Rank | User | ${capitalize(pointName)}${
         pointName.endsWith("s") ? "" : "s"
@@ -587,13 +601,12 @@ export async function buildOrUpdateAllTimeLeaderboard(
         }
     );
 
-    logger.debug("📊 AllTime Leaderboard Fetched", {
-    timeframe: "alltime",
-    redisKey,
-    scoresPreview: scores.slice(0, 10),
-    totalScores: scores.length,
-});
-
+    // logger.debug("📊 AllTime Leaderboard Fetched", {
+    //     timeframe: "alltime",
+    //     redisKey,
+    //     scoresPreview: scores.slice(0, 10),
+    //     totalScores: scores.length,
+    // });
 
     let markdown = `| Rank | User | ${capitalize(pointName)}${
         pointName.endsWith("s") ? "" : "s"
@@ -605,12 +618,12 @@ export async function buildOrUpdateAllTimeLeaderboard(
         for (let i = 0; i < scores.length; i++) {
             const { member, score } = scores[i];
             const safeMember = markdownEscape(member);
-            const userWikiLink = `/r/${subredditName}/wiki/user/${encodeURIComponent(
-                member
-            )}`;
+            // const userWikiLink = `/r/${subredditName}/wiki/user/${encodeURIComponent(
+            //     member
+            // )}`;
             markdown += `| ${
                 i + 1
-            } | [${safeMember}](${userWikiLink}) | ${score}${pointSymbol} |\n`;
+            } | ${safeMember} | ${score}${pointSymbol} |\n`;
         }
     }
 

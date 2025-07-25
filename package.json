@@ -9,6 +9,7 @@
     "test:unit": "vitest --run"
   },
   "dependencies": {
+    "@devvit/cli": "^0.11.19",
     "@devvit/protos": "^0.11.16",
     "@devvit/public-api": "0.11.16",
     "@devvit/shared-types": "0.11.16",

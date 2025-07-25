@@ -227,11 +227,7 @@ export const appSettings: SettingsFormField[] = [
                 helpText:
                     "List of trigger words users can type to award points (e.g., !award, .point). Each command should be on a new line. If you want to use regex, enable the option below.",
                 defaultValue: "!award",
-                onValidate: ({ value }) => {
-                    if (!value || value.trim() === "") {
-                        return "You must specify at least one command";
-                    }
-                },
+                onValidate: noValidTriggerWords,
             },
             {
                 name: AppSetting.ThanksCommandUsesRegex,
@@ -588,10 +584,15 @@ export const appSettings: SettingsFormField[] = [
             {
                 name: AppSetting.ScoreboardLink,
                 type: "string",
-                label: "Scoreboard Wiki Link",
+                label: "Scoreboard Wiki Name",
                 helpText:
-                    "Name of the wiki page for your subreddit's scoreboard (e.g. leaderboard).",
+                    "Name of the wiki page for your subreddit's scoreboard (e.g. leaderboard). Singular form is recommended as there is only one scoreboard per subreddit.",
                 defaultValue: "leaderboard",
+                onValidate: ({ value }) => {
+                    if (!value || value.trim() === "") {
+                        return "You must specify a wiki page name";
+                    }
+                },
             },
             {
                 name: AppSetting.LeaderboardHelpPage,
@@ -648,6 +649,18 @@ function selectFieldHasOptionChosen(
 ) {
     if (!event.value || event.value.length !== 1) {
         return "You must choose an option";
+    }
+}
+
+function noValidTriggerWords(
+    event: SettingsFormFieldValidatorEvent<string>
+) {
+    if (!event.value || event.value.trim() === "") {
+        return "You must specify at least one trigger word";
+    }
+    const lines = event.value.split("\n").map((line) => line.trim());
+    if (lines.length === 0 || lines.some((line) => line === "")) {
+        return "You must specify at least one trigger word";
     }
 }
 

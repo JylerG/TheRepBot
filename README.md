@@ -45,7 +45,10 @@ NOTE: If you update settings, you will have to uninstall to be able to reimpleme
 
 ## Version History
 ### 0.0.13
-* * Make it so only the all time leaderboard appears (can't figure out how to do every leaderboard) (STILL IN PROGRESS)
+* Make it so only the all time leaderboard appears (can't figure out how to do every leaderboard)
+* Make it so that flair is properly set
+* Make it so that leaderboard doesn't link to individual user pages anymore
+* Leaderboard now uses user flair to update the leaderboard
 ### 0.0.12
 * Update README to be more accurate
 ### 0.0.11
