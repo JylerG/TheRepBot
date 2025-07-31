@@ -102,14 +102,15 @@ export const restoreFormKey = Devvit.createForm(restoreForm, async (event, conte
 
 Devvit.addCustomPostType(leaderboardCustomPost);
 
-Devvit.addMenuItem({
-    label: "Submit Leaderboard Post",
-    forUserType: "moderator",
-    location: "subreddit",
-    onPress: async (event, context) => {
-        await createCustomPostMenuHandler(event, context);
-    },
-});
+//TODO: Uncomment if custom post functionality becomes possible
+// Devvit.addMenuItem({
+//     label: "Submit Leaderboard Post",
+//     forUserType: "moderator",
+//     location: "subreddit",
+//     onPress: async (event, context) => {
+//         await createCustomPostMenuHandler(event, context);
+//     },
+// });
 
 export const customPostFormKey = Devvit.createForm(customPostForm, createCustomPostFormHandler);
 

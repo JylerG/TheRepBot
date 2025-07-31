@@ -8,10 +8,6 @@ You can also set an optional post flair if a point is awarded, such as to mark t
 
 The app has backup and restore functionality, which enables points to be preserved if you uninstall the app or if you want to import data from a previous reputation points app. For technical details of this function, please [see here](https://www.reddit.com/r/fsvapps/wiki/reputatorbotbackup/). THIS BIT IS FROM u/fsv'S CODE AND TAKEN STRAIGHT FROM THEIR REPUTATORBOT PROJECT.
 
-## Custom Post
-
-By using the subreddit ... menu, you can create a custom post that shows the current leaderboard. You can choose the post title and the number of users to show on the leaderboard.
-
 ## Limitations
 
 * The optional leaderboard will not pull in points for users until this app awards one. If you have previously used /u/Clippy_Office_Asst or a similar bot to award reputation points in the past, this will make the leaderboard misleading unless you restore from a backup.
@@ -45,6 +41,9 @@ NOTE: If you update settings, you will have to uninstall to be able to reimpleme
 
 ## Version History
 ### 0.0.15
+* Add and implement various components to further expand on what the bot can do
+* Make it so the bot can't be awarded
+* Make it so non-superusers and non-mods can't use the mod award command
 * Remove leaderboard post (can't get it to accurately display users' scores)
 ### 0.0.14
 * Try to make the leaderboard post accurately display the top scoring users

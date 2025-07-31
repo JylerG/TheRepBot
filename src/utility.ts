@@ -33,6 +33,7 @@ export async function replacePlaceholders(template: string, placeholders: {
     symbol: string;
     scoreboard: string;
     permalink: string;
+    command: string;
 }): Promise<string> {
     let result = template;
     result = replaceAll(result, "{{awardee}}", placeholders.awardee);
@@ -42,5 +43,6 @@ export async function replacePlaceholders(template: string, placeholders: {
     result = replaceAll(result, "{{symbol}}", placeholders.symbol);
     result = replaceAll(result, "{{scoreboard}}", placeholders.scoreboard);
     result = replaceAll(result, "{{permalink}}", placeholders.permalink);
+    result = replaceAll(result, "{{command}}", placeholders.command);
     return result;
 }

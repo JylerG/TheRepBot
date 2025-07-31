@@ -24,14 +24,12 @@ export enum AppSetting {
     NotifyOnSelfAward = "notifyOnSelfAward",
     NotifyUsersWhenAPointIsAwarded = "notifyUsersWhenAPointIsAwarded",
     UsersWhoCannotAwardPointsMessage = "usersWhoCannotAwardPointsMessage",
-    UsersWhoCannotBeAwardedPointsMessage = "usersWhoCannotBeAwardedPointsMessage",
     ThanksCommandUsesRegex = "thanksCommandUsesRegex",
     ModAwardCommand = "approveCommand",
     SuperUsers = "superUsers",
     AutoSuperuserThreshold = "autoSuperuserThreshold",
     NotifyOnAutoSuperuser = "notifyOnAutoSuperuser",
     NotifyOnAutoSuperuserTemplate = "notifyOnAutoSuperuserTemplate",
-    UsersWhoCannotBeAwardedPoints = "excludedUsers",
     NotifyUsersWhoCannotAwardPoints = "notifyUsersWhoCannotAwardPoints",
     UsersWhoCannotAwardPoints = "usersWhoCantAwardPoints",
     ExistingFlairHandling = "existingFlairHandling",
@@ -40,8 +38,6 @@ export enum AppSetting {
     FlairTemplate = "thanksFlairTemplate",
     NotifyOnSuccess = "notifyOnSuccess",
     NotifyOnSuccessTemplate = "notifyOnSuccessTemplate",
-    NotifyAwardedUser = "notifyAwardedUser",
-    NotifyAwardedUserTemplate = "notifyAwardedUserTemplate",
     SetPostFlairOnThanks = "setPostFlairOnThanks",
     SetPostFlairText = "setPostFlairOnThanksText",
     SetPostFlairCSSClass = "setPostFlairOnThanksCSSClass",
@@ -49,7 +45,7 @@ export enum AppSetting {
     LeaderboardMode = "leaderboardMode",
     ScoreboardName = "ScoreboardName",
     LeaderboardSize = "leaderboardSize",
-    LeaderboardHelpPage = "leaderboardHelpPage",
+    PointSystemHelpPage = "pointSystemHelpPage",
     PostFlairTextToIgnore = "postFlairTextToIgnore",
     EnableBackup = "enableBackup",
     EnableRestore = "enableRestore",
@@ -83,10 +79,8 @@ export enum AppSetting {
     NotifyOnApprovedOnlyDisallowed = "notifyOnApprovedOnlyDisallowed",
     NotifyOnOPOnlyDisallowed = "notifyOnOPOnlyDisallowed",
     NotifyOnDisallowedFlair = "notifyOnDisallowedFlair",
-    NotifyOnInvalidPost = "notifyOnInvalidPost",
     NotifyOnUnflairedPost = "notifyOnUnflairedPost",
     NotifyOnDuplicateAwardMessage = "notifyOnDuplicateAwardMessage",
-    NotifyOnUsersWhoCannotBeAwarded = "notifyOnUsersWhoCannotBeAwarded",
 }
 
 export enum TemplateDefaults {
@@ -103,12 +97,10 @@ export enum TemplateDefaults {
     ApprovedOnlyDisallowedMessage = "Only moderators and approved users can award points.",
     DuplicateAwardMessage = "This user has already been awarded for this comment.",
     SelfAwardMessage = "You can't award yourself a {{name}}.",
-    BotAwardMessage = "You can't award the bot a {{name}}.",
-    UsersWhoCannotBeAwardedPointsMessage = "Sorry, you cannot award points to u/{{awardee}} as they are excluded from receiving points.",
+    BotAwardMessage = "You can't award u/TheRepBot a {{name}}.",
     InvalidPostMessage = "Points cannot be awarded on this post because the recipient is suspended or shadowbanned.",
     NotifyOnSelfAwardTemplate = "Hello {{awarder}}, you cannot award a {{name}} to yourself.",
     NotifyOnSuccessTemplate = "+1 {{name}} awarded to u/{{awardee}} by u/{{awarder}}. Total: {{total}}{{symbol}}. Scoreboard is located [here]({{scoreboard}}).",
-    NotifyAwardedUserTemplate = "Hello {{awardee}},\n\nYou have been awarded a point for your contribution! New score: {{score}}",
     NotifyOnSuperuserTemplate = 'Hello {{awardee}},\n\nNow that you have reached {{threshold}} points you can now award points yourself, even if normal users do not have permission to. Please use the command "{{command}}" if you\'d like to do this.',
 }
 
@@ -173,12 +165,6 @@ export enum NotifyOnInvalidPostReplyOptions {
 }
 
 export enum NotifyOnUnflairedPostReplyOptions {
-    NoReply = "none",
-    ReplyByPM = "replybypm",
-    ReplyAsComment = "replybycomment",
-}
-
-export enum NotifyUsersWhoCannotBeAwardedReplyOptions {
     NoReply = "none",
     ReplyByPM = "replybypm",
     ReplyAsComment = "replybycomment",
@@ -355,21 +341,6 @@ const NotifyOnDisallowedFlairReplyOptionChoices = [
     },
 ];
 
-const NotifyOnInvalidPostReplyOptionChoices = [
-    {
-        label: "No Notification",
-        value: NotifyOnInvalidPostReplyOptions.NoReply,
-    },
-    {
-        label: "Send user a private message",
-        value: NotifyOnInvalidPostReplyOptions.ReplyByPM,
-    },
-    {
-        label: "Reply as comment",
-        value: NotifyOnInvalidPostReplyOptions.ReplyAsComment,
-    },
-];
-
 const NotifyOnUnflairedPostReplyOptionChoices = [
     {
         label: "No Notification",
@@ -382,21 +353,6 @@ const NotifyOnUnflairedPostReplyOptionChoices = [
     {
         label: "Reply as comment",
         value: NotifyOnUnflairedPostReplyOptions.ReplyAsComment,
-    },
-];
-
-const NotifyUsersWhoCannotBeAwardedReplyOptionChoices = [
-    {
-        label: "No Notification",
-        value: NotifyUsersWhoCannotBeAwardedReplyOptions.NoReply,
-    },
-    {
-        label: "Send user a private message",
-        value: NotifyUsersWhoCannotBeAwardedReplyOptions.ReplyByPM,
-    },
-    {
-        label: "Reply as comment",
-        value: NotifyUsersWhoCannotBeAwardedReplyOptions.ReplyAsComment,
     },
 ];
 
@@ -424,30 +380,18 @@ const NotifyOnSuccessReplyOptionChoices = [
     },
 ];
 
-const PointAwardedReplyOptionChoices = [
-    { label: "No Notification", value: PointAwardedReplyOptions.NoReply },
-    {
-        label: "Send user a private message",
-        value: PointAwardedReplyOptions.ReplyByPM,
-    },
-    {
-        label: "Reply as comment",
-        value: PointAwardedReplyOptions.ReplyAsComment,
-    },
-];
-
 const AccessControlOptionChoices = [
     {
         label: "Moderators Only",
         value: "moderators-only",
     },
     {
-        label: "Mods and Approved Users",
-        value: "moderators-and-approved-users",
+        label: "Moderators and Approved Users",
+        value: "moderators-and-superusers",
     },
     {
         label: "Moderators, Approved Users, and Post Author (OP)",
-        value: "moderators-approved-and-op",
+        value: "moderators-superusers-and-op",
     },
     {
         label: "Everyone",
@@ -479,7 +423,7 @@ const ExistingFlairHandlingOptionChoices = [
     },
 ];
 
-const AutoSuperuserReplyOptionChoices = [
+const NotifyOnAutoSuperuserReplyOptionChoices = [
     { label: "No Notification", value: AutoSuperuserReplyOptions.NoReply },
     {
         label: "Send user a private message",
@@ -503,7 +447,15 @@ export const appSettings: SettingsFormField[] = [
                 label: "Who Can Award Points",
                 helpText: "Choose who is allowed to award points",
                 options: AccessControlOptionChoices,
-                defaultValue: ["moderators-approved-and-op"],
+                defaultValue: ["moderators-superusers-and-op"],
+                onValidate: selectFieldHasOptionChosen,
+            },
+            {
+                type: "select",
+                name: AppSetting.NotifyOnModOnlyDisallowed,
+                label: "Notify users when only moderators can award points",
+                options: NotifyOnModOnlyDisallowedReplyOptionChoices,
+                defaultValue: [NotifyOnModOnlyDisallowedReplyOptions.NoReply],
                 onValidate: selectFieldHasOptionChosen,
             },
             {
@@ -511,32 +463,65 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.ModOnlyDisallowedMessage,
                 label: "Mod Only Disallowed Message",
                 helpText:
-                    "Message shown when a user tries to award a point but only moderators can award points.",
+                    "Message shown when a user tries to award a point but only moderators can award points",
                 defaultValue: TemplateDefaults.ModOnlyDisallowedMessage,
+            },
+            {
+                type: "select",
+                name: AppSetting.NotifyOnApprovedOnlyDisallowed,
+                label: "Notify users when only moderators and approved users can award points",
+                options: NotifyOnApprovedOnlyDisallowedReplyOptionChoices,
+                defaultValue: [
+                    NotifyOnApprovedOnlyDisallowedReplyOptions.NoReply,
+                ],
+                onValidate: selectFieldHasOptionChosen,
             },
             {
                 type: "paragraph",
                 name: AppSetting.ApprovedOnlyDisallowedMessage,
                 label: "Approved Only Disallowed Message",
                 helpText:
-                    "Message shown when a user tries to award a point but only mods and approved users can award points.",
+                    "Message shown when a user tries to award a point but only mods and approved users can award points",
                 defaultValue: TemplateDefaults.ApprovedOnlyDisallowedMessage,
+            },
+            {
+                type: "select",
+                name: AppSetting.NotifyOnOPOnlyDisallowed,
+                label: "OP Only Disallowed Message",
+                helpText: "Notify users when only Moderators, Approved Users, and Post Authors (OPs) can award points",
+                options: NotifyOnOPOnlyDisallowedReplyOptionChoices,
+                defaultValue: [NotifyOnOPOnlyDisallowedReplyOptions.NoReply],
+                onValidate: selectFieldHasOptionChosen,
             },
             {
                 type: "paragraph",
                 name: AppSetting.OPOnlyDisallowedMessage,
                 label: "OP Only Disallowed Message",
                 helpText:
-                    "Message shown when a user tries to award a point but only mods, approved users, and Post Authors (OPs) can award points.",
+                    "Message shown when a user tries to award a point but only mods, approved users, and Post Authors (OPs) can award points",
                 defaultValue: TemplateDefaults.OPOnlyDisallowedMessage,
             },
             {
-                type: "string",
+                type: "select",
+                name: AppSetting.NotifyOnDisallowedFlair,
+                label: "Notify users when they try to award points on a post with a disallowed flair",
+                options: NotifyOnDisallowedFlairReplyOptionChoices,
+                defaultValue: [NotifyOnDisallowedFlairReplyOptions.NoReply],
+            },
+            {
+                type: "paragraph",
                 name: AppSetting.DisallowedFlairs,
                 label: "Disallowed Flairs",
                 helpText:
-                    "Comma-separated flair texts where points cannot be awarded",
-                defaultValue: "",
+                    "Flairs where points cannot be awarded. Each flair should be on a new line",
+            },
+            {
+                type: "paragraph",
+                name: AppSetting.DisallowedFlairMessage,
+                label: "Disallowed Flair Message",
+                helpText:
+                    "Message shown when a user tries to award points on a post with a disallowed flair",
+                defaultValue: TemplateDefaults.DisallowedFlairMessage,
             },
             {
                 type: "paragraph",
@@ -544,7 +529,7 @@ export const appSettings: SettingsFormField[] = [
                 label: "Trigger Words",
                 helpText:
                     "List of trigger words users can type to award points (e.g., !award, .point). Each command should be on a new line. If you want to use regex, enable the option below",
-                defaultValue: "!award",
+                defaultValue: "!award\n.award",
                 onValidate: noValidTriggerWords,
             },
             {
@@ -582,7 +567,6 @@ export const appSettings: SettingsFormField[] = [
                 label: "Point Symbol",
                 helpText:
                     "Optional emoji or character to show alongside point totals. Leave empty for no symbol",
-                defaultValue: "",
             },
         ],
     },
@@ -622,6 +606,53 @@ export const appSettings: SettingsFormField[] = [
         type: "group",
         label: "Notification Settings",
         fields: [
+            {
+                type: "paragraph",
+                name: AppSetting.SuperUsers,
+                label: "List of Superusers",
+                helpText:
+                    "List of usernames who can award points even if normal users do not have permission to. Each username should be on a new line",
+            },
+            {
+                type: "select",
+                name: AppSetting.NotifyOnAutoSuperuser,
+                label: "Notify users when they become superusers",
+                options: NotifyOnAutoSuperuserReplyOptionChoices,
+                defaultValue: [AutoSuperuserReplyOptions.NoReply],
+            },
+            {
+                type: "number",
+                name: AppSetting.AutoSuperuserThreshold,
+                label: "Auto Superuser Threshold",
+                helpText:
+                    "Number of points a user must have to become a superuser. Superusers can award points even if normal users do not have permission to.",
+                defaultValue: 100,
+            },
+            {
+                type: "paragraph",
+                name: AppSetting.NotifyOnAutoSuperuserTemplate,
+                label: "Notify On Auto Superuser Template",
+                helpText:
+                    "Message sent to users when they become superusers. Placeholders Supported: {{name}}, {{threshold}}, {{command}}",
+                defaultValue: TemplateDefaults.NotifyOnSuperuserTemplate,
+            },
+            {
+                type: "select",
+                name: AppSetting.NotifyOnPointAlreadyAwarded,
+                label: "Notify users when they try to award a comment they already awarded",
+                options: NotifyOnPointAlreadyAwardedReplyOptionChoices,
+                defaultValue: [NotifyOnPointAlreadyAwardedReplyOptions.NoReply],
+                onValidate: selectFieldHasOptionChosen,
+            },
+            {
+                type: "paragraph",
+                name: AppSetting.PointAlreadyAwardedMessage,
+                label: "Point Already Awarded Message",
+                helpText:
+                    "Shown when a user tries to award a message they've already awarded. Placeholders Supported: {{name}}, {{awarder}}",
+                defaultValue:
+                    TemplateDefaults.NotifyOnPointAlreadyAwardedTemplate,
+            },
             {
                 type: "select",
                 name: AppSetting.NotifyOnSelfAward,
@@ -670,7 +701,6 @@ export const appSettings: SettingsFormField[] = [
                 label: "Users Who Cannot Award Points",
                 helpText:
                     "List of usernames who cannot award points, even if they are mods or approved users. Each username should be on a new line",
-                defaultValue: "",
             },
             {
                 type: "paragraph",
@@ -679,7 +709,6 @@ export const appSettings: SettingsFormField[] = [
                 helpText: `Message shown when a user specified in the "Users Who Cannot Award Points" setting tries to award points but is not allowed to. Placeholders Supported: {{name}}`,
                 defaultValue: TemplateDefaults.UsersWhoCannotAwardPointsMessage,
             },
-
             {
                 type: "select",
                 name: AppSetting.NotifyOnDuplicateAward,
@@ -708,7 +737,7 @@ export const appSettings: SettingsFormField[] = [
                 name: AppSetting.BotAwardMessage,
                 label: "Bot Award Message",
                 helpText:
-                    "Message shown when someone tries to award the bot. You can use {{name}} to get the name of the point",
+                    "Message shown when someone tries to award the bot. Placeholders Supported: {{name}}",
                 defaultValue: TemplateDefaults.BotAwardMessage,
             },
             {
@@ -820,16 +849,16 @@ export const appSettings: SettingsFormField[] = [
                 },
             },
             {
-                name: AppSetting.LeaderboardHelpPage,
+                name: AppSetting.PointSystemHelpPage,
                 type: "string",
                 label: "Point System Help Page",
                 helpText:
-                    "Optional. Please use a full URL, (e.g. https://www.reddit.com/r/yourSubreddit/wiki/yourPointSystemExplanation).",
+                    "Optional. Please use a full URL, (e.g. https://www.reddit.com/r/yourSubreddit/wiki/yourPointSystemExplanation)",
             },
             {
                 type: "select",
                 name: AppSetting.AllowUnflairedPosts,
-                label: "Allow on Unflaired Posts?",
+                label: "Allow points on unflaired posts?",
                 helpText: "Allow awarding on posts without flair?",
                 options: [
                     { label: "Yes", value: "yes" },
@@ -837,6 +866,22 @@ export const appSettings: SettingsFormField[] = [
                 ],
                 defaultValue: ["no"],
                 onValidate: selectFieldHasOptionChosen,
+            },
+            {
+                type: "select",
+                name: AppSetting.NotifyOnUnflairedPost,
+                label: "Notify users when they try to award points on a post without flair if it's not allowed",
+                options: NotifyOnUnflairedPostReplyOptionChoices,
+                defaultValue: [NotifyOnUnflairedPostReplyOptions.NoReply],
+                onValidate: selectFieldHasOptionChosen,
+            },
+            {
+                type: "paragraph",
+                name: AppSetting.UnflairedPostMessage,
+                label: "Unflaired post message",
+                helpText:
+                    "Message shown when a user tries to award points on a post without flair. Placeholders Supported: {{name}}",
+                defaultValue: TemplateDefaults.UnflairedPostMessage,
             },
         ],
     },
@@ -855,7 +900,7 @@ export const appSettings: SettingsFormField[] = [
                 type: "boolean",
                 label: "Enable Restore",
                 helpText:
-                    "This should be left disabled to prevent inadvertent score overwriting. Only enable during restore operations.",
+                    "This should be left disabled to prevent inadvertent score overwriting. Only enable during restore operations",
                 defaultValue: false,
             },
         ],
