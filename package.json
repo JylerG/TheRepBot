@@ -22,6 +22,7 @@
     "chalk": "^5.4.1",
     "cron-parser": "^5.1.1",
     "date-fns": "^4.1.0",
+    "devvit": "^0.11.19",
     "eslint-config-prettier": "^10.1.5",
     "eslint-plugin-sonarjs": "^3.0.4",
     "markdown-escape": "^2.0.0",

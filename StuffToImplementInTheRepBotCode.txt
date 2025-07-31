@@ -1,0 +1,25 @@
+TODO
+MAKE_SURE_REPLY_OPTIONS_EXIST_ON_ALL_THINGS_ON_THIS_NOTEPAD
+MAKE_SURE_ALL_ARE_IMPLEMENTED_INTO_THANKSPOINTS.TS PROPERLY
+SelfAward Message/Notify
+Success Message/Notify
+UserCannotAwardPoints List/Message/Notify
+BotAward Message/Notify
+ModAward Message/Notify
+ModRemove Message/Notify
+Duplicate Message/Notify
+
+
+
+TODO
+AutoSuperuser Message/Notify/Threshold
+SuperuserList
+AwardedUser Template/Notify (done?)
+PostFlairTextToIgnore (done?)
+DenyCommand (make this do something)
+ApproveCommand (make this do something)
+make it so Superusers/Mods can use the modaward command
+Make Mod/Approved/OPOnly DisallowedMessage appear based on permission level (hasPermission in thanksPoints.ts)
+UnflairedPost Message/Notify
+DisallowedFlair Notify/List
+InvalidPost Notify/(List?)

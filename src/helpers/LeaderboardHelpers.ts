@@ -1,29 +1,38 @@
-import { Context } from "@devvit/public-api";
-import { AppSetting } from "../settings.js";
-import { POINTS_STORE_KEY } from "../thanksPoints.js";
-import { LeaderboardEntry } from "../customPost/state.js";
+//TODO: Uncomment and implement LeaderboardHelpers.ts file if it becomes possible to use it in the future.
 
-export async function fetchLeaderboardEntries(
-    context: Context,
-    size: number
-): Promise<LeaderboardEntry[]> {
-    const leaderboard: LeaderboardEntry[] = [];
-    const items = await context.redis.zRange(
-        POINTS_STORE_KEY,
-        0,
-        size - 1,
-        { by: "score", reverse: true }
-    );
-    let rank = 1;
-    const settings = await context.settings.getAll();
-    for (const item of items) {
-        leaderboard.push({
-            username: item.member,
-            score: item.score,
-            rank: rank++,
-            pointName: (settings[AppSetting.PointName] as string) ?? "point",
-        });
-    }
+// import { Context, TriggerContext } from "@devvit/public-api";
+// import { AppSetting } from "../settings.js";
+// import { LeaderboardEntry } from "../customPost/state.js";
+// import { logger } from "../logger.js";
+// import pluralize from "pluralize";
 
-    return leaderboard;
-}
+// function capitalize(word: string): string {
+//     return word.charAt(0).toUpperCase() + word.slice(1);
+// }
+
+// const POINTS_STORE_KEY = "thanksPointsStore";
+
+// export async function fetchLeaderboardEntries(
+//     context: Context,
+//     count: number
+// ): Promise<LeaderboardEntry[]> {
+//     const settings = await context.settings.getAll();
+//     const subredditName = (await context.reddit.getCurrentSubreddit()).name;
+//     const pointName =
+//         (settings[AppSetting.PointName] as string | undefined) ?? "point";
+//     const redisKey = `${POINTS_STORE_KEY}`;
+
+//     const results = await context.redis.zRange(redisKey, 0, count, {
+//         by: "score",
+//         reverse: true,
+//     });
+
+//     const resultsWithScores = results.map((entry, index) => ({
+//         username: entry.member,
+//         score: Number(entry.score),
+//         rank: index + 1,
+//         pointName: capitalize(pluralize(pointName)),
+//     }));
+
+//     return resultsWithScores;
+// }

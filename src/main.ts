@@ -5,7 +5,8 @@ import { onAppFirstInstall, onAppInstallOrUpgrade } from "./installEvents.js";
 import { updateLeaderboard } from "./leaderboard.js";
 import { cleanupDeletedAccounts } from "./cleanupTasks.js";
 import { backupAllScores, restoreForm, restoreFormHandler, showRestoreForm } from "./backupAndRestore.js";
-import { leaderboardCustomPost, createCustomPostMenuHandler, customPostForm, createCustomPostFormHandler } from "./customPost/index.js";
+// TODO: Uncomment and implement customPost files if it becomes possible to use them in the future.
+// import { leaderboardCustomPost, createCustomPostMenuHandler, customPostForm, createCustomPostFormHandler } from "./customPost/index.js";
 import { ADHOC_CLEANUP_JOB, CLEANUP_JOB, UPDATE_LEADERBOARD_JOB, VALIDATE_REGEX_JOB } from "./constants.js";
 
 Devvit.addSettings(appSettings);
@@ -100,18 +101,19 @@ export const restoreFormKey = Devvit.createForm(restoreForm, async (event, conte
     await restoreFormHandler(event, context);
 });
 
-Devvit.addCustomPostType(leaderboardCustomPost);
-
-Devvit.addMenuItem({
-    label: "Submit Leaderboard Post",
-    forUserType: "moderator",
-    location: "subreddit",
-    onPress: async (event, context) => {
-        await createCustomPostMenuHandler(event, context);
-    },
-});
-
-export const customPostFormKey = Devvit.createForm(customPostForm, createCustomPostFormHandler);
+//TODO: Uncomment and implement customPostType and MenuItem Submit Leaderboard Post if it becomes possible to use it in the future.
+// Devvit.addCustomPostType(leaderboardCustomPost);
+// 
+// Devvit.addMenuItem({
+//     label: "Submit Leaderboard Post",
+//     forUserType: "moderator",
+//     location: "subreddit",
+//     onPress: async (event, context) => {
+//         await createCustomPostMenuHandler(event, context);
+//     },
+// });
+// 
+// export const customPostFormKey = Devvit.createForm(customPostForm, createCustomPostFormHandler);
 
 Devvit.configure({
     redditAPI: true,

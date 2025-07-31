@@ -3,55 +3,26 @@ import {
     FormOnSubmitEvent,
     JSONObject,
     MenuItemOnPressEvent,
-    ScheduledJobEvent,
     SettingsValues,
     TriggerContext,
     User,
-    WikiPagePermissionLevel,
 } from "@devvit/public-api";
 import { CommentSubmit, CommentUpdate } from "@devvit/protos";
-import { getSubredditName, isModerator, replaceAll } from "./utility.js";
-import {
-    addWeeks,
-    format,
-    startOfWeek,
-    startOfMonth,
-    startOfYear,
-} from "date-fns";
-import { leaderboardKey } from "./leaderboard.js";
+import { getSubredditName, isModerator } from "./utility.js";
 import {
     ExistingFlairOverwriteHandling,
     AppSetting,
-    PointAwardedReplyOptions,
-    NotifyOnErrorReplyOptions,
     TemplateDefaults,
     NotifyOnSuccessReplyOptions,
+    NotifyOnSelfAwardReplyOptions,
+    NotifyOnPointAlreadyAwardedReplyOptions,
 } from "./settings.js";
 import { setCleanupForUsers } from "./cleanupTasks.js";
 import { isLinkId } from "@devvit/shared-types/tid.js";
 import { manualSetPointsForm } from "./main.js";
-import { LeaderboardMode } from "./settings.js";
 import { logger } from "./logger.js";
-import { updateLeaderboard } from "./leaderboard.js";
-import { LeaderboardEntry, LeaderboardState } from "./customPost/state.js";
-import { fetchLeaderboardEntries } from "./helpers/LeaderboardHelpers.js";
-import { CustomPostData } from "./customPost/index.js";
 
-export const POINTS_STORE_KEY = "thanksPointsStore";
-const TIMEFRAMES = ["daily", "weekly", "monthly", "yearly", "alltime"] as const;
-
-function pluralize(word: string): string {
-    if (word.endsWith("s")) return word;
-
-    const lowerWord = word.toLowerCase();
-    if (lowerWord.match(/[^aeiou]y$/)) {
-        return word.slice(0, -1) + "ies";
-    }
-    if (lowerWord.match(/(s|x|z|ch|sh)$/)) {
-        return word + "es";
-    }
-    return word + "s";
-}
+const POINTS_STORE_KEY = "thanksPointsStore";
 
 function formatMessage(
     template: string,
@@ -94,7 +65,7 @@ async function getCurrentScore(
     let scoreFromRedis: number | undefined;
     try {
         scoreFromRedis =
-            (await context.redis.zScore(POINTS_STORE_KEY, user.username)) ?? 0;
+            (await context.redis.zScore(`${POINTS_STORE_KEY}`, user.username)) ?? 0;
     } catch {
         scoreFromRedis = 0;
     }
@@ -149,13 +120,11 @@ export async function setUserScore(
     const subredditName = await getSubredditName(context);
 
     // ✅ Store score in Redis under each timeframe
-    for (const timeframe of TIMEFRAMES) {
-        const redisKey = leaderboardKey(timeframe, subredditName);
-        await context.redis.zAdd(redisKey, {
-            member: username,
-            score: newScore,
-        });
-    }
+    const redisKey = `thanksPointsStore:${subredditName}:alltime`;
+    await context.redis.zAdd(redisKey, {
+        member: username,
+        score: newScore,
+    });
 
     // ✅ Schedule cleanup
     await setCleanupForUsers([username], context);
@@ -407,21 +376,21 @@ export async function handleThanksEvent(
         const selfMsg = formatMessage(
             (settings[AppSetting.SelfAwardMessage] as string) ??
                 TemplateDefaults.NotifyOnSelfAwardTemplate,
-            { 
-                awarder: awarder, 
+            {
+                awarder: awarder,
                 name: pointName,
             }
         );
 
-        const notify = ((settings[AppSetting.NotifyOnError] as string[]) ?? [
+        const notify = ((settings[AppSetting.NotifyOnSelfAward] as string[]) ?? [
             "none",
         ])[0];
-        if (notify === NotifyOnErrorReplyOptions.ReplyAsComment) {
+        if (notify === NotifyOnSelfAwardReplyOptions.ReplyAsComment) {
             await context.reddit.submitComment({
                 id: event.comment.id,
                 text: selfMsg,
             });
-        } else if (notify === NotifyOnErrorReplyOptions.ReplyByPM) {
+        } else if (notify === NotifyOnSelfAwardReplyOptions.ReplyByPM) {
             await context.reddit.sendPrivateMessage({
                 to: awarder,
                 subject: `You tried to award yourself a ${pointName}`,
@@ -442,16 +411,16 @@ export async function handleThanksEvent(
             { name: pointName }
         );
 
-        const notify = ((settings[AppSetting.NotifyOnError] as string[]) ?? [
+        const notify = ((settings[AppSetting.NotifyOnPointAlreadyAwarded] as string[]) ?? [
             "none",
         ])[0];
-        if (notify === NotifyOnErrorReplyOptions.ReplyByPM) {
+        if (notify === NotifyOnPointAlreadyAwardedReplyOptions.ReplyByPM) {
             await context.reddit.sendPrivateMessage({
                 to: awarder,
                 subject: `You've already awarded this comment`,
                 text: alreadyMsg,
             });
-        } else if (notify === NotifyOnErrorReplyOptions.ReplyAsComment) {
+        } else if (notify === NotifyOnPointAlreadyAwardedReplyOptions.ReplyAsComment) {
             await context.reddit.submitComment({
                 id: event.comment.id,
                 text: alreadyMsg,
@@ -463,7 +432,8 @@ export async function handleThanksEvent(
     }
 
     // All good – give point
-    const redisKey = `${POINTS_STORE_KEY}:alltime`;
+    const subredditName = await context.reddit.getCurrentSubreddit().then(sub => sub.name);
+    const redisKey = `${POINTS_STORE_KEY}`;
     const newScore = await context.redis.zIncrBy(redisKey, recipient, 1);
 
     logger.info(
@@ -504,83 +474,8 @@ export async function handleThanksEvent(
         });
     }
 
-    // Update leaderboard display
-    try {
-        const maxEntries =
-            (settings[AppSetting.LeaderboardSize] as number) ?? 20;
-        const entries = await fetchLeaderboardEntries(
-            context as unknown as Context,
-            maxEntries
-        );
-
-        const updatedLeaderboard = entries.map((item, i) => ({
-            username: item.username,
-            score: item.score,
-            rank: i + 1,
-            pointName,
-        }));
-
-        const stateKey = "customPostData";
-        const existing = await context.redis.get(stateKey);
-        let customPostData: CustomPostData = existing
-            ? JSON.parse(existing)
-            : {};
-        customPostData.entries = updatedLeaderboard;
-        await context.redis.set(stateKey, JSON.stringify(customPostData));
-
-        logger.debug("✅ Updated leaderboard entries in customPostData.");
-    } catch (err) {
-        logger.error("❌ Failed to update in-memory leaderboard state", {
-            error: err,
-        });
-    }
-
     // Update flair
     await setUserScore(recipient, newScore, context, settings);
-}
-
-function expirationFor(timeframe: string): Date | undefined {
-    const now = new Date();
-    const utcNow = new Date(
-        Date.UTC(
-            now.getUTCFullYear(),
-            now.getUTCMonth(),
-            now.getUTCDate(),
-            now.getUTCHours(),
-            now.getUTCMinutes(),
-            now.getUTCSeconds()
-        )
-    );
-
-    switch (timeframe) {
-        case "daily": {
-            const tomorrow = new Date(utcNow);
-            tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-            tomorrow.setUTCHours(0, 0, 0, 0);
-            return tomorrow;
-        }
-        case "weekly": {
-            const dayOfWeek = utcNow.getUTCDay();
-            const daysUntilMonday = (8 - dayOfWeek) % 7 || 7;
-            const nextMonday = new Date(utcNow);
-            nextMonday.setUTCDate(nextMonday.getUTCDate() + daysUntilMonday);
-            nextMonday.setUTCHours(0, 0, 0, 0);
-            return nextMonday;
-        }
-        case "monthly": {
-            return new Date(
-                Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth() + 1, 1)
-            );
-        }
-        case "yearly": {
-            return new Date(Date.UTC(utcNow.getUTCFullYear() + 1, 0, 1));
-        }
-        case "alltime": {
-            return undefined;
-        }
-        default:
-            throw new Error(`Invalid timeframe: ${timeframe}`);
-    }
 }
 
 function capitalize(word: string): string {
@@ -589,113 +484,6 @@ function capitalize(word: string): string {
 
 function markdownEscape(input: string): string {
     return input.replace(/([\\`*_{}\[\]()#+\-.!])/g, "\\$1");
-}
-
-async function buildOrUpdateUserPage(
-    context: Context,
-    {
-        member,
-        score,
-        subredditName,
-        pointName,
-        pointSymbol,
-        formattedDate,
-        correctPermissionLevel,
-    }: {
-        member: string;
-        score: number;
-        subredditName: string;
-        pointName: string;
-        pointSymbol: string;
-        formattedDate: string;
-        correctPermissionLevel: WikiPagePermissionLevel;
-    }
-) {
-    const userPage = `user/${encodeURIComponent(member)}`;
-    const userAwardsKey = `user_awards:${member}`;
-    let awardedPosts: Array<{ date: number; title: string; link: string }> = [];
-
-    try {
-        const rawPosts = await context.redis.zRange(userAwardsKey, 0, 9);
-        awardedPosts = rawPosts
-            .map((entry) => {
-                try {
-                    return JSON.parse(
-                        typeof entry === "string" ? entry : entry.member
-                    );
-                } catch {
-                    return null;
-                }
-            })
-            .filter(Boolean) as Array<{
-            date: number;
-            title: string;
-            link: string;
-        }>;
-    } catch {
-        awardedPosts = [];
-    }
-
-    let userPageContent = `# ${capitalize(
-        pointName
-    )}s for u/${member}\n\n**Total:** ${score}${pointSymbol}\n\n`;
-
-    if (awardedPosts.length > 0) {
-        userPageContent += `# Snipe History for u/${member}\n\n| Date | Submission |\n|------|------------|\n`;
-        for (const award of awardedPosts) {
-            const dateStr = format(
-                new Date(award.date * 1000),
-                "MM/dd/yyyy HH:mm:ss"
-            );
-            const safeTitle = markdownEscape(award.title);
-            userPageContent += `| ${dateStr} | [${safeTitle}](${award.link}) |\n`;
-        }
-    } else {
-        userPageContent += `| – | No data yet | – |\n`;
-    }
-
-    userPageContent += `\nLast updated: ${formattedDate} UTC`;
-
-    try {
-        const userWikiPage = await context.reddit.getWikiPage(
-            subredditName,
-            userPage
-        );
-        if (userWikiPage.content !== userPageContent.trim()) {
-            await context.reddit.updateWikiPage({
-                subredditName,
-                page: userPage,
-                content: userPageContent.trim(),
-                reason: `Update user score data for ${member}`,
-            });
-        }
-
-        const userWikiSettings = await userWikiPage.getSettings();
-        if (
-            userWikiSettings.permLevel !== correctPermissionLevel ||
-            userWikiSettings.listed !== true
-        ) {
-            await context.reddit.updateWikiPageSettings({
-                subredditName,
-                page: userPage,
-                listed: true,
-                permLevel: correctPermissionLevel,
-            });
-        }
-    } catch {
-        await context.reddit.createWikiPage({
-            subredditName,
-            page: userPage,
-            content: userPageContent.trim(),
-            reason: "Created user score data page",
-        });
-        await context.reddit.updateWikiPageSettings({
-            subredditName,
-            page: userPage,
-            listed: true,
-            permLevel: correctPermissionLevel,
-        });
-    }
 }
 
 export async function handleManualPointSetting(
@@ -707,7 +495,7 @@ export async function handleManualPointSetting(
     try {
         user = await context.reddit.getUserByUsername(comment.authorName);
     } catch {
-        //
+        
     }
 
     if (!user) {

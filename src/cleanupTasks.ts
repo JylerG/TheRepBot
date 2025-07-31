@@ -1,12 +1,12 @@
 import { TriggerContext } from "@devvit/public-api";
 import { addDays, addMinutes, subMinutes } from "date-fns";
-import { POINTS_STORE_KEY } from "./thanksPoints.js";
 import { CronExpressionParser } from "cron-parser";
 import { ADHOC_CLEANUP_JOB, CLEANUP_JOB_CRON } from "./constants.js";
 import { AppSetting } from "./settings.js";
 
 const CLEANUP_LOG_KEY = "cleanupStore";
 const DAYS_BETWEEN_CHECKS = 28;
+const POINTS_STORE_KEY = "thanksPointsStore";
 
 export async function setCleanupForUsers(usernames: string[], context: TriggerContext) {
     if (usernames.length === 0) {
@@ -61,13 +61,13 @@ export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext
 
     const activeUsers = userStatuses.filter(u => u.isActive).map(u => u.username);
     const deletedUsers = userStatuses.filter(u => !u.isActive).map(u => u.username);
-
+    const subredditName = await context.reddit.getCurrentSubreddit().then(sub => sub.name);
     if (activeUsers.length > 0) {
         await setCleanupForUsers(activeUsers, context);
     }
 
     if (deletedUsers.length > 0) {
-        await context.redis.zRem(POINTS_STORE_KEY, deletedUsers);
+        await context.redis.zRem(`${POINTS_STORE_KEY}`, deletedUsers);
         await context.redis.zRem(CLEANUP_LOG_KEY, deletedUsers);
 
 
@@ -90,7 +90,8 @@ export async function cleanupDeletedAccounts(_: unknown, context: TriggerContext
 
 export async function populateCleanupLogAndScheduleCleanup(context: TriggerContext) {
 
-    const scoreUsers = (await context.redis.zRange(POINTS_STORE_KEY, 0, -1)).map(u => u.member);
+    const subredditName = await context.reddit.getCurrentSubreddit().then(sub => sub.name);
+    const scoreUsers = (await context.redis.zRange(`${POINTS_STORE_KEY}`, 0, -1)).map(u => u.member);
     const cleanupUsers = (await context.redis.zRange(CLEANUP_LOG_KEY, 0, -1)).map(u => u.member);
 
     const toAdd = scoreUsers.filter(u => !cleanupUsers.includes(u));

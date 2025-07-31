@@ -1,76 +1,134 @@
-import { Context, useInterval, UseIntervalResult, useState, UseStateResult } from "@devvit/public-api";
-import { AppSetting } from "../settings.js";
-import { POINTS_STORE_KEY } from "../thanksPoints.js";
-import { CustomPostData } from "./index.js";
-import { fetchLeaderboardEntries } from "../helpers/LeaderboardHelpers.js";
+//TODO: Uncomment and implement state.ts file if it becomes possible to use it in the future.
 
-// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
-export type LeaderboardEntry = {
-    username: string;
-    score: number;
-    rank: number;
-    pointName: string;
-};
+// import {
+//     Context,
+//     useInterval,
+//     UseIntervalResult,
+//     useState,
+//     UseStateResult,
+// } from "@devvit/public-api";
+// import { AppSetting } from "../settings.js";
+// import { fetchLeaderboardEntries } from "../helpers/LeaderboardHelpers.js";
+// import { CustomPostData } from "./index.js";
+// import pluralize from "pluralize";
 
-export class LeaderboardState {
-    readonly leaderboardSize: UseStateResult<number>;
-    readonly leaderboardHelpUrl: UseStateResult<string>;
-    readonly leaderboardEntries: UseStateResult<LeaderboardEntry[]>;
-    readonly leaderboardPage: UseStateResult<number>;
-    readonly leaderboardPageSize: number = 7;
-    readonly subredditName: UseStateResult<string>;
+// // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+// export type LeaderboardEntry = {
+//     username: string;
+//     score: number;
+//     rank: number;
+//     pointName: string;
+// };
+// const subredditName = (async (context: Context) => {
+//     const subreddit = await context.reddit.getCurrentSubreddit();
+//     return subreddit.name;
+// });
+// const POINTS_STORE_KEY = `thanksPointsStore`;
 
-    readonly refresher: UseIntervalResult;
+// export class LeaderboardState {
+//     readonly leaderboardSize: UseStateResult<number>;
+//     readonly leaderboardHelpUrl: UseStateResult<string>;
+//     readonly leaderboardEntries: UseStateResult<LeaderboardEntry[]>;
+//     readonly leaderboardPage: UseStateResult<number>;
+//     readonly leaderboardPageSize: number = 7;
+//     readonly subredditName: UseStateResult<string>;
 
-    constructor (public context: Context) {
-        this.leaderboardSize = useState<number>(async () => this.getLeaderboardSize());
-        this.leaderboardHelpUrl = useState<string>(async () => await context.settings.get<string>(AppSetting.LeaderboardHelpPage) ?? "");
-        this.leaderboardEntries = useState<LeaderboardEntry[]>(async () => fetchLeaderboardEntries(this.context, this.leaderboardSize[0]));
-        this.leaderboardPage = useState(1);
-        this.subredditName = useState<string>(async () => (await context.reddit.getCurrentSubreddit()).name);
-        this.refresher = useInterval(async () => this.updateLeaderboard(), 1000 * 60);
-        this.refresher.start();
-    }
+//     readonly refresher: UseIntervalResult;
 
-    get leaderboard (): LeaderboardEntry[] {
-        return this.leaderboardEntries[0];
-    }
+//     constructor(public context: Context) {
+//         // Use state, defaulting to 20 if no Redis value is found
+//         this.leaderboardSize = useState<number>(20);
 
-    set leaderboard (value: LeaderboardEntry[]) {
-        this.leaderboardEntries[1](value);
-    }
+//         // Get leaderboard help URL from settings
+//         this.leaderboardHelpUrl = useState<string>(
+//             async () =>
+//                 (await context.settings.get<string>(
+//                     AppSetting.LeaderboardHelpPage
+//                 )) ?? ""
+//         );
 
-    get page (): number {
-        return this.leaderboardPage[0];
-    }
+//         // Default to an empty leaderboard until fetched
+//         this.leaderboardEntries = useState<LeaderboardEntry[]>([]);
 
-    set page (value: number) {
-        if (value < 1 || value > this.maxPage) {
-            return;
-        }
+//         // Track current page
+//         this.leaderboardPage = useState(1);
 
-        this.leaderboardPage[1](value);
-    }
+//         // Subreddit name for flair and other use cases
+//         this.subredditName = useState<string>(
+//             async () => (await context.reddit.getCurrentSubreddit()).name
+//         );
 
-    get maxPage (): number {
-        return Math.ceil(this.leaderboard.length / this.leaderboardPageSize);
-    }
+//         // Set up an interval to refresh leaderboard periodically
+//         this.refresher = useInterval(
+//             async () => this.updateLeaderboard(),
+//             1000 * 60
+//         );
 
-    async getLeaderboardSize () {
-        const redisKey = "customPostData";
-        const data = await this.context.redis.get(redisKey);
-        if (!data) {
-            return 20;
-        }
+//         // Kick off first update
+//         this.refresher.start();
 
-        const customPostData = JSON.parse(data) as CustomPostData;
-        return customPostData.numberOfUsers;
-    }
+//         // Immediately fetch leaderboard once constructed
+//         this.updateLeaderboard();
+//     }
 
-   
+//     get leaderboard(): LeaderboardEntry[] {
+//         return this.leaderboardEntries[0];
+//     }
 
-    async updateLeaderboard () {
-        this.leaderboard = await fetchLeaderboardEntries(this.context, this.leaderboardSize[0]);
-        this.refresher.start();
-    }
-}
+//     set leaderboard(value: LeaderboardEntry[]) {
+//         this.leaderboardEntries[1](value);
+//     }
+
+//     get page(): number {
+//         return this.leaderboardPage[0];
+//     }
+
+//     set page(value: number) {
+//         if (value < 1 || value > this.maxPage) return;
+//         this.leaderboardPage[1](value);
+//     }
+
+//     get maxPage(): number {
+//         return Math.ceil(this.leaderboard.length / this.leaderboardPageSize);
+//     }
+
+//     async getLeaderboardSize(): Promise<number> {
+//         const redisKey = "customPostData";
+//         const data = await this.context.redis.get(redisKey);
+//         if (!data) return 20;
+
+//         try {
+//             const customPostData = JSON.parse(data) as CustomPostData;
+//             return customPostData.numberOfUsers ?? 20;
+//         } catch (err) {
+//             console.warn("❌ Failed to parse customPostData:", err);
+//             return 20;
+//         }
+//     }
+
+//     async fetchLeaderboard () {
+//         const leaderboard: LeaderboardEntry[] = [];
+//         const settings = await this.context.settings.getAll();
+//         const items = await this.context.redis.zRange(POINTS_STORE_KEY, 0, this.leaderboardSize[0] - 1, { by: "rank", reverse: true });
+//         let rank = 1;
+//         for (const item of items) {
+//             leaderboard.push({
+//                 username: item.member,
+//                 score: item.score,
+//                 rank: rank++,
+//                 pointName: capitalize(pluralize(String(settings[AppSetting.PointName] ?? "point"))),
+//             });
+//         }
+
+//         return leaderboard;
+//     }
+
+//     async updateLeaderboard () {
+//         this.leaderboard = await this.fetchLeaderboard();
+//         this.refresher.start();
+//     }
+// }
+
+// function capitalize(word: string): string {
+//     return word.charAt(0).toUpperCase() + word.slice(1);
+// }

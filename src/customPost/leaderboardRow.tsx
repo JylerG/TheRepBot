@@ -1,26 +1,27 @@
-import { Devvit } from "@devvit/public-api";
-import { AppSetting } from "../settings.js";
+//TODO: Uncomment and implement leaderboardRow.tsx file if it becomes possible to use it in the future.
 
-interface LeaderboardItem {
-    username: string;
-    score: number;
-    rank: number;
-    pointName: string;
-    navigateToProfile?: () => void | Promise<void>;
-}
+// import { Devvit } from "@devvit/public-api";
 
-export const LeaderboardRow = (props: LeaderboardItem) => (
-    <hstack cornerRadius="small" gap="small" width="100%" grow>
-        <spacer size="small" />
-        <button onPress={props.navigateToProfile}>{props.username}</button>
-        <spacer grow />
-        <zstack alignment="middle center" cornerRadius="full">
-            <text>
-                {props.score}
-                {" "}
-                {props.pointName}
-            </text>
-        </zstack>
-        <spacer size="small" />
-    </hstack>
-);
+// interface LeaderboardItem {
+//     username: string;
+//     score: number;
+//     rank: number;
+//     pointName: string;
+//     navigateToProfile?: () => void | Promise<void>;
+// }
+
+// export const LeaderboardRow = (props: LeaderboardItem) => (
+//     <hstack cornerRadius="small" gap="small" width="100%" grow>
+//         <spacer size="small" />
+//         <button onPress={props.navigateToProfile}>{props.username}</button>
+//         <spacer grow />
+//         <zstack alignment="middle center" cornerRadius="full">
+//             <text>
+//                 {props.score}
+//                 {" "}
+//                 {props.pointName}
+//             </text>
+//         </zstack>
+//         <spacer size="small" />
+//     </hstack>
+// );
