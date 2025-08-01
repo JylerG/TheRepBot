@@ -45,7 +45,7 @@ export async function updateLeaderboard(
     const formattedDate = format(new Date(), "MM/dd/yyyy HH:mm:ss");
     let markdown = `# ${capitalize(pointName)}boards for r/${subredditName}\n`;
 
-    const helpPage = settings[AppSetting.LeaderboardHelpPage] as
+    const helpPage = settings[AppSetting.PointSystemHelpPage] as
         | string
         | undefined;
     const helpMessageTemplate =

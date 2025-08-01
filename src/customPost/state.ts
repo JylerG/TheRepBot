@@ -7,7 +7,6 @@ import {
     UseStateResult,
 } from "@devvit/public-api";
 import { AppSetting } from "../settings.js";
-import { CustomPostData } from "./index.js";
 import pluralize from "pluralize";
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
@@ -84,20 +83,6 @@ export class LeaderboardState {
 
     get maxPage(): number {
         return Math.ceil(this.leaderboard.length / this.leaderboardPageSize);
-    }
-
-    async getLeaderboardSize(): Promise<number> {
-        const redisKey = "customPostData";
-        const data = await this.context.redis.get(redisKey);
-        if (!data) return 20;
-
-        try {
-            const customPostData = JSON.parse(data) as CustomPostData;
-            return customPostData.numberOfUsers ?? 20;
-        } catch (err) {
-            console.warn("❌ Failed to parse customPostData:", err);
-            return 20;
-        }
     }
 
     async fetchLeaderboard () {
