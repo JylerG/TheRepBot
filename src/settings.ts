@@ -711,21 +711,6 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "select",
-                name: AppSetting.NotifyOnDuplicateAward,
-                label: "Notify a user if they try to award a point on a comment they've already awarded",
-                options: NotifyOnDuplicateAwardReplyOptionChoices,
-                defaultValue: [NotifyOnDuplicateAwardReplyOptions.NoReply],
-                onValidate: selectFieldHasOptionChosen,
-            },
-            {
-                type: "paragraph",
-                name: AppSetting.NotifyOnDuplicateAwardMessage,
-                label: "Duplicate Award Message",
-                helpText: `Message shown when a user tries to award a point on a comment they've already awarded. Placeholders Supported: {{name}}`,
-                defaultValue: TemplateDefaults.NotifyOnDuplicateAwardMessage,
-            },
-            {
-                type: "select",
                 name: AppSetting.NotifyOnBotAward,
                 label: "Notify a user if they try to award the bot",
                 options: NotifyOnBotAwardReplyOptionChoices,

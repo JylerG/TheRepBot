@@ -1,6 +1,6 @@
 RepBot is an app that allows users to award reputation points if a user has been helpful. Its main use case is for help and advice subreddits to help indicate users who have a track record of providing useful solutions.
 
-It allows the OP of a post, a mod, or a trusted user to reply to a user and award them a point using a bot command, which will be stored as their user flair (optional) and stored in a data store. The command can be customisable (by default it is `!thanks`).
+It allows the OP of a post, a mod, or a trusted user to reply to a user and award them a point using a bot command, which will be stored as their user flair (optional) and stored in a data store. The command can be customisable (by default it is `!award` and `.award`).
 
 The app gets triggered when a comment is posted or edited, but only never award points twice per comment. It triggers on edit to give the user chance to amend a comment to add the "thanks" command if they forget initially.
 
@@ -17,7 +17,7 @@ The app has backup and restore functionality, which enables points to be preserv
 
 You may wish to create an automod rule that detects phrases like "thank you" and similar in comments that do not have the trigger command, and reply suggesting that they use the command.
 
-I strongly recommend using a command that is not going to be used in "normal" comments, to avoid awarding points accidentally. If you use a prefix e.g. !thanks or /award, you will reduce the risk of accidental points awarding.
+I strongly recommend using a command that is not going to be used in "normal" comments, to avoid awarding points accidentally. If you use a prefix e.g. !award or /award, you will reduce the risk of accidental points awarding.
 
 I recommend testing settings out on a test subreddit before deploying to a real subreddit for the first time.
 
@@ -26,8 +26,6 @@ I recommend testing settings out on a test subreddit before deploying to a real 
 This application stores the reputation score awarded by the app for each user in a Redis data store and (if configured) as the user's flair. It also stores a record that a comment has had a point awarded on it for a period of a week after that point is awarded.
 
 If the application is removed from a subreddit, all data is deleted although the flairs will remain. If the application is subsequently re-installed, the existing flairs will be used as a basis for new point awarding.
-
-Data for users is removed from the app within 48 hours from v1.3 onwards.
 
 ## Acknowledgements
 
