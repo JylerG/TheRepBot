@@ -40,6 +40,7 @@ NOTE: If you update settings, you will have to uninstall to be able to reimpleme
 ## Version History
 ### 0.0.20
 * Update to try and publish publicly
+* Remove unnecessary/unused files
 ### 0.0.19
 * Remove manual point setting (can't get it to work)
 ### 0.0.18
