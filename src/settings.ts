@@ -47,8 +47,8 @@ export enum AppSetting {
     LeaderboardSize = "leaderboardSize",
     PointSystemHelpPage = "pointSystemHelpPage",
     PostFlairTextToIgnore = "postFlairTextToIgnore",
-    EnableBackup = "enableBackup",
-    EnableRestore = "enableRestore",
+    // EnableBackup = "enableBackup",
+    // EnableRestore = "enableRestore",
     PrioritiseScoreFromFlair = "prioritiseScoreFromFlair",
     PointTriggerWords = "pointTriggerWords",
     SuccessMessage = "successMessage",
@@ -870,26 +870,26 @@ export const appSettings: SettingsFormField[] = [
             },
         ],
     },
-    {
-        type: "group",
-        label: "Backup and Restore",
-        fields: [
-            {
-                name: AppSetting.EnableBackup,
-                type: "boolean",
-                label: "Enable Backup",
-                defaultValue: true,
-            },
-            {
-                name: AppSetting.EnableRestore,
-                type: "boolean",
-                label: "Enable Restore",
-                helpText:
-                    "This should be left disabled to prevent inadvertent score overwriting. Only enable during restore operations",
-                defaultValue: false,
-            },
-        ],
-    },
+    // {
+    //     type: "group",
+    //     label: "Backup and Restore",
+    //     fields: [
+    //         {
+    //             name: AppSetting.EnableBackup,
+    //             type: "boolean",
+    //             label: "Enable Backup",
+    //             defaultValue: true,
+    //         },
+    //         {
+    //             name: AppSetting.EnableRestore,
+    //             type: "boolean",
+    //             label: "Enable Restore",
+    //             helpText:
+    //                 "This should be left disabled to prevent inadvertent score overwriting. Only enable during restore operations",
+    //             defaultValue: false,
+    //         },
+    //     ],
+    // },
 ];
 
 function isFlairTemplateValid(event: SettingsFormFieldValidatorEvent<string>) {

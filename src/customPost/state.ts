@@ -7,7 +7,6 @@ import {
     UseStateResult,
 } from "@devvit/public-api";
 import { AppSetting } from "../settings.js";
-import { fetchLeaderboardEntries } from "../helpers/LeaderboardHelpers.js";
 import { CustomPostData } from "./index.js";
 import pluralize from "pluralize";
 
@@ -18,10 +17,6 @@ export type LeaderboardEntry = {
     rank: number;
     pointName: string;
 };
-const subredditName = (async (context: Context) => {
-    const subreddit = await context.reddit.getCurrentSubreddit();
-    return subreddit.name;
-});
 const POINTS_STORE_KEY = `thanksPointsStore`;
 
 export class LeaderboardState {
@@ -42,7 +37,7 @@ export class LeaderboardState {
         this.leaderboardHelpUrl = useState<string>(
             async () =>
                 (await context.settings.get<string>(
-                    AppSetting.LeaderboardHelpPage
+                    AppSetting.PointSystemHelpPage
                 )) ?? ""
         );
 

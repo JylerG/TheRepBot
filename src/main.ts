@@ -62,23 +62,23 @@ Devvit.addSchedulerJob({
     },
 });
 
-Devvit.addMenuItem({
-    label: "Backup TheRepBot Scores",
-    forUserType: "moderator",
-    location: "subreddit",
-    onPress: async (event, context) => {
-        await backupAllScores(event, context);
-    },
-});
+// Devvit.addMenuItem({
+//     label: "Backup TheRepBot Scores",
+//     forUserType: "moderator",
+//     location: "subreddit",
+//     onPress: async (event, context) => {
+//         await backupAllScores(event, context);
+//     },
+// });
 
-Devvit.addMenuItem({
-    label: "Restore TheRepBot Scores",
-    forUserType: "moderator",
-    location: "subreddit",
-    onPress: async (event, context) => {
-        await showRestoreForm(event, context);
-    },
-});
+// Devvit.addMenuItem({
+//     label: "Restore TheRepBot Scores",
+//     forUserType: "moderator",
+//     location: "subreddit",
+//     onPress: async (event, context) => {
+//         await showRestoreForm(event, context);
+//     },
+// });
 
 export const manualSetPointsForm = Devvit.createForm(
     (data) => ({ fields: data.fields as FormField[] }),
