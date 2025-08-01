@@ -38,6 +38,9 @@ This app is open source and licenced under the BSD 3-Clause Licence. You can fin
 NOTE: If you update settings, you will have to uninstall to be able to reimplement the content that you want in whatever you are editing.
 
 ## Version History
+### 0.0.17
+* Remove unused code
+* Remove incorrect information from README
 ### 0.0.15
 * Add and implement various components to further expand on what the bot can do
 * Make it so the bot can't be awarded
