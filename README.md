@@ -38,6 +38,8 @@ This app is open source and licenced under the BSD 3-Clause Licence. You can fin
 NOTE: If you update settings, you will have to uninstall to be able to reimplement the content that you want in whatever you are editing.
 
 ## Version History
+### 0.0.19
+* Remove manual point setting (can't get it to work)
 ### 0.0.18
 * Make it so that backup and restore methods aren't available to mods
 ### 0.0.17

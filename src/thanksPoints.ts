@@ -1,8 +1,4 @@
 import {
-    Context,
-    FormOnSubmitEvent,
-    JSONObject,
-    MenuItemOnPressEvent,
     SettingsValues,
     TriggerContext,
     User,
@@ -19,7 +15,6 @@ import {
 } from "./settings.js";
 import { setCleanupForUsers } from "./cleanupTasks.js";
 import { isLinkId } from "@devvit/shared-types/tid.js";
-import { manualSetPointsForm } from "./main.js";
 import { logger } from "./logger.js";
 
 const POINTS_STORE_KEY = "thanksPointsStore";
@@ -55,7 +50,6 @@ async function getCurrentScore(
     settings: SettingsValues
 ): Promise<{
     currentScore: number;
-    flairScoreIsNaN: boolean;
     flairText: string;
     flairSymbol: string;
 }> {
@@ -97,7 +91,6 @@ async function getCurrentScore(
     if (settings[AppSetting.PrioritiseScoreFromFlair] && !flairScoreIsNaN) {
         return {
             currentScore: scoreFromFlair,
-            flairScoreIsNaN,
             flairText: flairTextRaw,
             flairSymbol,
         };
@@ -108,7 +101,6 @@ async function getCurrentScore(
             !flairScoreIsNaN && scoreFromFlair > scoreFromRedis
                 ? scoreFromFlair
                 : scoreFromRedis,
-        flairScoreIsNaN,
         flairText: flairTextRaw,
         flairSymbol,
     };
@@ -638,77 +630,4 @@ function capitalize(word: string): string {
 
 function markdownEscape(input: string): string {
     return input.replace(/([\\`*_{}\[\]()#+\-.!])/g, "\\$1");
-}
-
-export async function handleManualPointSetting(
-    event: MenuItemOnPressEvent,
-    context: Context
-) {
-    const comment = await context.reddit.getCommentById(event.targetId);
-    let user: User | undefined;
-    try {
-        user = await context.reddit.getUserByUsername(comment.authorName);
-    } catch {
-        //
-    }
-
-    if (!user) {
-        context.ui.showToast("Cannot set points. User may be shadowbanned.");
-        return;
-    }
-
-    const settings = await context.settings.getAll();
-    const { currentScore } = await getCurrentScore(user, context, settings);
-
-    const fields = [
-        {
-            name: "newScore",
-            type: "number",
-            defaultValue: currentScore,
-            label: `Enter a new score for ${comment.authorName}`,
-            helpText:
-                "Warning: This will overwrite the score that currently exists",
-            multiSelect: false,
-            required: true,
-        },
-    ];
-
-    context.ui.showForm(manualSetPointsForm, { fields });
-}
-
-export async function manualSetPointsFormHandler(
-    event: FormOnSubmitEvent<JSONObject>,
-    context: Context
-) {
-    if (!context.commentId) {
-        context.ui.showToast("An error occurred setting the user's score.");
-        return;
-    }
-
-    const newScore = event.values.newScore as number | undefined;
-    if (!newScore) {
-        context.ui.showToast("You must enter a new score");
-        return;
-    }
-
-    const comment = await context.reddit.getCommentById(context.commentId);
-
-    let user: User | undefined;
-    try {
-        user = await context.reddit.getUserByUsername(comment.authorName);
-    } catch {
-        //
-    }
-
-    if (!user) {
-        context.ui.showToast("Cannot set points. User may be shadowbanned.");
-        return;
-    }
-
-    const settings = await context.settings.getAll();
-
-    const { flairScoreIsNaN } = await getCurrentScore(user, context, settings);
-    await setUserScore(comment.authorName, newScore, context, settings);
-
-    context.ui.showToast(`Score for ${comment.authorName} is now ${newScore}`);
 }
