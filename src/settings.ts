@@ -60,8 +60,6 @@ export enum AppSetting {
     DisallowedFlairMessage = "disallowedFlairMessage",
     InvalidPostMessage = "invalidPostMessage",
     ApproveMessage = "approveMessage",
-    DenyCommand = "denyCommand",
-    DenyMessage = "denyMessage",
     PointSymbol = "pointSymbol",
     AccessControl = "accessControl",
     ModOnlyDisallowedMessage = "modOnlyDisallowedMessage",
@@ -74,7 +72,6 @@ export enum AppSetting {
     NotifyOnDuplicateAward = "notifyOnDuplicateAward",
     NotifyOnBotAward = "notifyOnBotAward",
     NotifyOnApprove = "notifyOnApprove",
-    NotifyOnDeny = "notifyOnDeny",
     NotifyOnModOnlyDisallowed = "notifyOnModOnlyDisallowed",
     NotifyOnApprovedOnlyDisallowed = "notifyOnApprovedOnlyDisallowed",
     NotifyOnOPOnlyDisallowed = "notifyOnOPOnlyDisallowed",
@@ -86,7 +83,6 @@ export enum AppSetting {
 export enum TemplateDefaults {
     UnflairedPostMessage = "Points cannot be awarded on posts without flair. Please award only on flaired posts.",
     OPOnlyDisallowedMessage = "Only moderators, approved users, and Post Authors (OPs) can award {{name}}s.",
-    DenyMessage = "1 {{name}} removed by a moderator.  u/{{awardee}} now has {{total}}{{symbol}} {{name}}s. Scoreboard is located [here]({{scoreboard}}).",
     ApproveMessage = "A moderator gave an award! u/{{awardee}} now has {{total}}{{symbol}} {{name}}s.",
     NotifyOnDuplicateAwardMessage = "You have already awarded this comment a {{name}}.",
     NotifyOnPointAlreadyAwardedTemplate = "You have already awarded this comment a {{name}}.",
@@ -123,12 +119,6 @@ export enum NotifyOnDuplicateAwardReplyOptions {
 }
 
 export enum NotifyOnModApproveReplyOptions {
-    NoReply = "none",
-    ReplyByPM = "replybypm",
-    ReplyAsComment = "replybycomment",
-}
-
-export enum NotifyOnModDenyReplyOptions {
     NoReply = "none",
     ReplyByPM = "replybypm",
     ReplyAsComment = "replybycomment",
@@ -266,18 +256,6 @@ const NotifyOnModApproveReplyOptionChoices = [
     {
         label: "Reply as comment",
         value: NotifyOnModApproveReplyOptions.ReplyAsComment,
-    },
-];
-
-const NotifyOnModDenyReplyOptionChoices = [
-    { label: "No Notification", value: NotifyOnModDenyReplyOptions.NoReply },
-    {
-        label: "Send user a private message",
-        value: NotifyOnModDenyReplyOptions.ReplyByPM,
-    },
-    {
-        label: "Reply as comment",
-        value: NotifyOnModDenyReplyOptions.ReplyAsComment,
     },
 ];
 
@@ -488,7 +466,8 @@ export const appSettings: SettingsFormField[] = [
                 type: "select",
                 name: AppSetting.NotifyOnOPOnlyDisallowed,
                 label: "OP Only Disallowed Message",
-                helpText: "Notify users when only Moderators, Approved Users, and Post Authors (OPs) can award points",
+                helpText:
+                    "Notify users when only Moderators, Approved Users, and Post Authors (OPs) can award points",
                 options: NotifyOnOPOnlyDisallowedReplyOptionChoices,
                 defaultValue: [NotifyOnOPOnlyDisallowedReplyOptions.NoReply],
                 onValidate: selectFieldHasOptionChosen,
@@ -545,13 +524,6 @@ export const appSettings: SettingsFormField[] = [
                 label: "Alternate command for mods and trusted users to award reputation points",
                 helpText: "Optional",
                 defaultValue: "!modaward",
-            },
-            {
-                type: "string",
-                name: AppSetting.DenyCommand,
-                label: "Moderator Deny Command",
-                helpText: "Command to revoke a previously awarded point",
-                defaultValue: "!remove",
             },
             {
                 type: "string",
@@ -740,22 +712,6 @@ export const appSettings: SettingsFormField[] = [
                 helpText:
                     "Placeholders supported: {{awarder}}, {{awardee}}, {{permalink}}, {{total}}, {{symbol}}, {{name}}, {{scoreboard}}",
                 defaultValue: TemplateDefaults.ApproveMessage,
-            },
-            {
-                type: "select",
-                name: AppSetting.NotifyOnDeny,
-                label: "Notify a user when a point is removed by a moderator",
-                options: NotifyOnModDenyReplyOptionChoices,
-                defaultValue: [NotifyOnModDenyReplyOptions.NoReply],
-                onValidate: selectFieldHasOptionChosen,
-            },
-            {
-                type: "paragraph",
-                name: AppSetting.DenyMessage,
-                label: "Moderator Deny Message",
-                helpText:
-                    "Placeholders supported: {{awarder}}, {{awardee}}, {{permalink}}, {{total}}, {{symbol}}, {{name}}, {{scoreboard}}",
-                defaultValue: TemplateDefaults.DenyMessage,
             },
         ],
     },
