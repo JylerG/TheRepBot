@@ -7,8 +7,10 @@ import {
     TriggerContext,
     User,
 } from "@devvit/public-api";
+import { fetchLeaderboardEntries, updateLeaderboardWiki } from "./helpers/LeaderboardHelpers.js";
+import { LeaderboardEntry } from "./customPost/state.js";
 import { CommentSubmit, CommentUpdate } from "@devvit/protos";
-import { getSubredditName, isModerator } from "./utility.js";
+import { isModerator } from "./utility.js";
 import {
     ExistingFlairOverwriteHandling,
     AppSetting,
@@ -58,7 +60,7 @@ async function getCurrentScore(
     flairText: string;
     flairSymbol: string;
 }> {
-    const subredditName = await getSubredditName(context);
+    const subredditName = (await context.reddit.getCurrentSubreddit()).name;
     const userFlair = await user.getUserFlairBySubreddit(subredditName);
 
     let scoreFromRedis: number | undefined;
@@ -178,7 +180,7 @@ async function setUserScore(
             cssClass = undefined;
         }
 
-        const subredditName = await getSubredditName(context);
+        const subredditName = (await context.reddit.getCurrentSubreddit()).name;
 
         await context.reddit.setUserFlair({
             subredditName,
@@ -599,6 +601,8 @@ export async function handleThanksEvent(
 
     // 🧼 Final step: update flair
     await setUserScore(recipient, newScore, context, settings);
+
+    await updateLeaderboardWiki(context);
 }
 
 function capitalize(word: string): string {
