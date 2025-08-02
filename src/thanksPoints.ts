@@ -1,4 +1,8 @@
 import {
+    Context,
+    FormOnSubmitEvent,
+    JSONObject,
+    MenuItemOnPressEvent,
     SettingsValues,
     TriggerContext,
     User,
@@ -16,6 +20,7 @@ import {
 import { setCleanupForUsers } from "./cleanupTasks.js";
 import { isLinkId } from "@devvit/shared-types/tid.js";
 import { logger } from "./logger.js";
+import { manualSetPointsForm } from "./main.js";
 
 const POINTS_STORE_KEY = "thanksPointsStore";
 
@@ -106,25 +111,21 @@ async function getCurrentScore(
     };
 }
 
-export async function setUserScore(
+async function setUserScore(
     username: string,
     newScore: number,
     context: TriggerContext,
     settings: SettingsValues
-): Promise<void> {
-    const subredditName = await getSubredditName(context);
-
-    // ✅ Store score in Redis under each timeframe
-    const redisKey = `thanksPointsStore:${subredditName}:alltime`;
-    await context.redis.zAdd(redisKey, {
+) {
+    // Store the user's new score
+    await context.redis.zAdd(POINTS_STORE_KEY, {
         member: username,
         score: newScore,
     });
-
-    // ✅ Schedule cleanup
+    // Queue user for cleanup checks in 24 hours, overwriting existing value.
     await setCleanupForUsers([username], context);
 
-    // ✅ Schedule leaderboard job
+    // Queue a leaderboard update.
     await context.scheduler.runJob({
         name: "updateLeaderboard",
         runAt: new Date(),
@@ -133,7 +134,6 @@ export async function setUserScore(
         },
     });
 
-    // ✅ Flair settings
     const flairSetting = ((settings[AppSetting.ExistingFlairHandling] as
         | string[]
         | undefined) ?? [
@@ -142,79 +142,56 @@ export async function setUserScore(
 
     const shouldSetUserFlair =
         flairSetting !== ExistingFlairOverwriteHandling.NeverSet;
-    if (!shouldSetUserFlair) {
-        return;
-    }
 
-    // ✅ Read flair styling preferences
-    let cssClass = settings[AppSetting.CSSClass] as string | undefined;
-    let flairTemplate = settings[AppSetting.FlairTemplate] as
-        | string
-        | undefined;
-
-    if (!cssClass) cssClass = undefined;
-    if (!flairTemplate) flairTemplate = undefined;
-    if (cssClass && flairTemplate) cssClass = undefined; // template wins
-
-    // ✅ Try to get user's score from their wiki page
-    try {
-        const userPage = await context.reddit.getWikiPage(
-            subredditName,
-            `user/${username}`
-        );
-        const wikiContent = userPage.content ?? "";
-        const scoreMatch = wikiContent.match(/Total:\s*(\d+)/i);
-        if (scoreMatch && !isNaN(parseInt(scoreMatch[1], 10))) {
-            newScore = parseInt(scoreMatch[1], 10);
+    if (shouldSetUserFlair) {
+        const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
+        let flairText = "";
+        switch (flairSetting) {
+            case ExistingFlairOverwriteHandling.OverwriteNumericSymbol:
+                flairText = `${newScore}${pointSymbol}`;
+                break;
+            case ExistingFlairOverwriteHandling.OverwriteNumeric:
+                flairText = `${newScore}`;
+                break;
         }
-    } catch {
-        // ignore if missing
+
+        console.log(
+            `Setting points flair for ${username}. New score: ${flairText}`
+        );
+
+        let cssClass = settings[AppSetting.CSSClass] as string | undefined;
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+        if (!cssClass) {
+            cssClass = undefined;
+        }
+
+        let flairTemplate = settings[AppSetting.FlairTemplate] as
+            | string
+            | undefined;
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+        if (!flairTemplate) {
+            flairTemplate = undefined;
+        }
+
+        if (flairTemplate && cssClass) {
+            // Prioritise flair templates over CSS classes.
+            cssClass = undefined;
+        }
+
+        const subredditName = await getSubredditName(context);
+
+        await context.reddit.setUserFlair({
+            subredditName,
+            username,
+            cssClass,
+            flairTemplateId: flairTemplate,
+            text: flairText,
+        });
+    } else {
+        console.log(
+            `${username}: Flair not set (option disabled or flair in wrong state)`
+        );
     }
-
-    // ✅ Format flair text
-    const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
-    let flairText = "";
-    switch (flairSetting) {
-        case ExistingFlairOverwriteHandling.OverwriteNumericSymbol:
-            flairText = `${newScore}${pointSymbol}`;
-            break;
-        case ExistingFlairOverwriteHandling.OverwriteNumeric:
-            flairText = `${newScore}`;
-            break;
-    }
-
-    // ✅ Get the existing flair to compare
-    let oldFlairText = "";
-    try {
-        const userObj = await context.reddit.getUserByUsername(username);
-        const flairInfo = await userObj?.getUserFlairBySubreddit(subredditName);
-        oldFlairText = flairInfo?.flairText ?? "";
-    } catch {
-        // ignore
-    }
-
-    const flairChanged = oldFlairText !== flairText;
-
-    await context.reddit.setUserFlair({
-        subredditName: subredditName,
-        username: username,
-        cssClass: cssClass,
-        flairTemplateId: flairTemplate,
-        text: flairText,
-    });
-
-    await context.redis.hSet(`userflair:${subredditName}`, {
-        [username]: flairText,
-    });
-
-    logger.debug("✅ Setting user flair", {
-        username,
-        flairChanged,
-        oldText: oldFlairText,
-        newText: flairText,
-        flairTemplateId: flairTemplate,
-        cssClass,
-    });
 }
 
 async function getUserIsSuperuser(
@@ -630,4 +607,76 @@ function capitalize(word: string): string {
 
 function markdownEscape(input: string): string {
     return input.replace(/([\\`*_{}\[\]()#+\-.!])/g, "\\$1");
+}
+
+export async function handleManualPointSetting(
+    event: MenuItemOnPressEvent,
+    context: Context
+) {
+    const comment = await context.reddit.getCommentById(event.targetId);
+    let user: User | undefined;
+    try {
+        user = await context.reddit.getUserByUsername(comment.authorName);
+    } catch {
+        //
+    }
+
+    if (!user) {
+        context.ui.showToast("Cannot set points. User may be shadowbanned.");
+        return;
+    }
+
+    const settings = await context.settings.getAll();
+    const { currentScore } = await getCurrentScore(user, context, settings);
+
+    const fields = [
+        {
+            name: "newScore",
+            type: "number",
+            defaultValue: currentScore,
+            label: `Enter a new score for ${comment.authorName}`,
+            helpText:
+                "Warning: This will overwrite the score that currently exists",
+            multiSelect: false,
+            required: true,
+        },
+    ];
+
+    context.ui.showForm(manualSetPointsForm, { fields });
+}
+
+export async function manualSetPointsFormHandler(
+    event: FormOnSubmitEvent<JSONObject>,
+    context: Context
+) {
+    if (!context.commentId) {
+        context.ui.showToast("An error occurred setting the user's score.");
+        return;
+    }
+
+    const newScore = event.values.newScore as number | undefined;
+    if (!newScore) {
+        context.ui.showToast("You must enter a new score");
+        return;
+    }
+
+    const comment = await context.reddit.getCommentById(context.commentId);
+
+    let user: User | undefined;
+    try {
+        user = await context.reddit.getUserByUsername(comment.authorName);
+    } catch {
+        //
+    }
+
+    if (!user) {
+        context.ui.showToast("Cannot set points. User may be shadowbanned.");
+        return;
+    }
+
+    const settings = await context.settings.getAll();
+
+    await setUserScore(comment.authorName, newScore, context, settings);
+
+    context.ui.showToast(`Score for ${comment.authorName} is now ${newScore}`);
 }
