@@ -46,6 +46,13 @@ export async function updateLeaderboard (event: ScheduledJobEvent<JSONObject | u
 
     const pointName = settings[AppSetting.PointName] as string ?? "point";
     let wikiContents = `# ${capitalize(pointName)}board for ${subredditName}\n\nUser | ${capitalize(pointName)}s Earned\n-|-\n`;
+    
+    const helpPage = settings[AppSetting.PointSystemHelpPage] as string | undefined;
+    
+    if (helpPage) {
+        wikiContents += `\n\n[How to award points on /r/${subredditName}](${helpPage})`;
+    }
+    
     wikiContents += highScores.map(score => `${markdownEscape(score.member)}|${score.score}`).join("\n");
 
     wikiContents += `\n\nThe leaderboard shows the top ${leaderboardSize} ${pluralize("user", leaderboardSize)} who ${pluralize("has", leaderboardSize)} been awarded at least one point`;
@@ -58,10 +65,7 @@ export async function updateLeaderboard (event: ScheduledJobEvent<JSONObject | u
 
     wikiContents += ".";
 
-    const helpPage = settings[AppSetting.PointSystemHelpPage] as string | undefined;
-    if (helpPage) {
-        wikiContents += `\n\n[How to award points on /r/${subredditName}](${helpPage})`;
-    }
+    
 
     let wikiPage: WikiPage | undefined;
     try {
