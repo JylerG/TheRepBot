@@ -313,7 +313,6 @@ export async function handleThanksEvent(
 
         await Promise.all([
                 newComment.distinguish(),
-                newComment.lock(),
             ]);
         return;
     }
@@ -362,7 +361,6 @@ export async function handleThanksEvent(
             });
             await Promise.all([
                 newComment.distinguish(),
-                newComment.lock(),
             ]);
         } else if (accessControl === "moderators-and-superusers") {
             const disallowedMessage = formatMessage(
@@ -379,7 +377,6 @@ export async function handleThanksEvent(
 
             await Promise.all([
                 newComment.distinguish(),
-                newComment.lock(),
             ]);
         } else if (accessControl === "moderators-superusers-and-op") {
             const disallowedMessage = formatMessage(
@@ -396,7 +393,6 @@ export async function handleThanksEvent(
 
             await Promise.all([
                 newComment.distinguish(),
-                newComment.lock(),
             ]);
         }
 
@@ -440,7 +436,6 @@ export async function handleThanksEvent(
 
             await Promise.all([
                 newComment.distinguish(),
-                newComment.lock(),
             ]);
         } else if (notify === NotifyOnSelfAwardReplyOptions.ReplyByPM) {
             await context.reddit.sendPrivateMessage({
@@ -487,7 +482,6 @@ export async function handleThanksEvent(
 
             await Promise.all([
                 newComment.distinguish(),
-                newComment.lock(),
             ]);
         }
     }
@@ -520,7 +514,7 @@ export async function handleThanksEvent(
                 id: event.comment.id,
                 text: modDuplicateMsg,
             });
-            await Promise.all([newComment.distinguish(), newComment.lock()]);
+            await Promise.all([newComment.distinguish()]);
         }
         logger.info("❌ Award was already given. Skipping.");
         return;
@@ -568,7 +562,6 @@ export async function handleThanksEvent(
 
             await Promise.all([
                 newComment.distinguish(),
-                newComment.lock(),
             ]);
             await context.redis.set(modAlreadyAwardedKey, "1");
         }
@@ -589,7 +582,6 @@ export async function handleThanksEvent(
 
         await Promise.all([
                 newComment.distinguish(),
-                newComment.lock(),
             ]);
 
         return;
@@ -636,7 +628,6 @@ export async function handleThanksEvent(
 
             await Promise.all([
                 newComment.distinguish(),
-                newComment.lock(),
             ]);
         }
 
