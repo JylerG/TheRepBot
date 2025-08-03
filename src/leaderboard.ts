@@ -45,13 +45,16 @@ export async function updateLeaderboard (event: ScheduledJobEvent<JSONObject | u
     const subredditName = await getSubredditName(context);
 
     const pointName = settings[AppSetting.PointName] as string ?? "point";
-    let wikiContents = `# ${capitalize(pointName)}board for ${subredditName}\n\nUser | ${capitalize(pointName)}s Earned\n-|-\n`;
     
     const helpPage = settings[AppSetting.PointSystemHelpPage] as string | undefined;
     
+    let wikiContents = "";
     if (helpPage) {
-        wikiContents += `\n\n[How to award points on /r/${subredditName}](${helpPage})`;
+        wikiContents += `# ${capitalize(pointName)}board for ${subredditName}\n\n[How to award points on /r/${subredditName}](${helpPage})\n\nUser | ${capitalize(pointName)}s Earned\n-|-\n`;
+    } else {
+        wikiContents += `# ${capitalize(pointName)}board for ${subredditName}\n\nUser | ${capitalize(pointName)}s Earned\n-|-\n`;
     }
+    
     
     wikiContents += highScores.map(score => `${markdownEscape(score.member)}|${score.score}`).join("\n");
 

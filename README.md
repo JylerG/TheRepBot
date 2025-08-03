@@ -38,6 +38,8 @@ This app is open source and licenced under the BSD 3-Clause Licence. You can fin
 NOTE: If you update settings, you will have to uninstall to be able to reimplement the content that you want in whatever you are editing.
 
 ## Version History
+### 0.0.27
+* Fix formatting with where the "how to award points" message appears
 ### 0.0.26
 * Move "how to award points" message to top of leaderboard wiki page
 ### 0.0.25
