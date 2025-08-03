@@ -3,15 +3,19 @@ import {
     JobContext,
     WikiPagePermissionLevel,
     JSONObject,
+    WikiPage,
 } from "@devvit/public-api";
 import { format,  } from "date-fns";
 import { AppSetting, LeaderboardMode, TemplateDefaults } from "./settings.js";
 import { getSubredditName } from "./utility.js";
 import { logger } from "./logger.js";
+import pluralize from "pluralize";
 
 export const TIMEFRAMES = [
     "alltime",
 ] as const;
+
+const POINTS_STORE_KEY = "thanksPointsStore";
 
 function capitalize(word: string): string {
     return word.charAt(0).toUpperCase() + word.slice(1);
@@ -21,139 +25,78 @@ function markdownEscape(input: string): string {
     return input.replace(/([\\`*_{}\[\]()#+\-.!])/g, "\\$1");
 }
 
-export async function updateLeaderboard(
-    event: ScheduledJobEvent<JSONObject | undefined>,
-    context: JobContext
-) {
+export async function updateLeaderboard (event: ScheduledJobEvent<JSONObject | undefined>, context: JobContext) {
     const settings = await context.settings.getAll();
-    const leaderboardMode = settings[AppSetting.LeaderboardMode] as
-        | string[]
-        | undefined;
-    if (!leaderboardMode || leaderboardMode[0] === LeaderboardMode.Off) return;
 
-    const wikiPageName =
-        (settings[AppSetting.ScoreboardName] as string) ?? "leaderboard";
-    if (!wikiPageName.trim()) return;
-
-    const leaderboardSize =
-        (settings[AppSetting.LeaderboardSize] as number) ?? 10;
-    const pointName = (settings[AppSetting.PointName] as string) ?? "point";
-    const pointSymbol = (settings[AppSetting.PointSymbol] as string) ?? "";
-    const subredditName = await getSubredditName(context);
-    if (!subredditName) return;
-
-    const formattedDate = format(new Date(), "MM/dd/yyyy HH:mm:ss");
-    let markdown = `# ${capitalize(pointName)}boards for r/${subredditName}\n`;
-
-    const helpPage = settings[AppSetting.PointSystemHelpPage] as
-        | string
-        | undefined;
-    const helpMessageTemplate =
-        TemplateDefaults.LeaderboardHelpPageMessage as string;
-    if (helpPage?.trim()) {
-        markdown += `${helpMessageTemplate.replace("{{help}}", helpPage)}\n\n`;
+    const leaderboardMode = settings[AppSetting.LeaderboardMode] as string[] | undefined;
+    if (!leaderboardMode || leaderboardMode.length === 0 || leaderboardMode[0] as LeaderboardMode === LeaderboardMode.Off) {
+        return;
     }
 
-    const correctPermissionLevel =
-        leaderboardMode[0] === LeaderboardMode.Public
-            ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS
-            : WikiPagePermissionLevel.MODS_ONLY;
+    const wikiPageName = settings[AppSetting.ScoreboardName] as string | undefined;
+    if (!wikiPageName) {
+        return;
+    }
 
-    // Fetch the all-time leaderboard entries
-    const redisKey = `thanksPointsStore:${subredditName}:alltime`;
-    const { markdown: tableMarkdown, scores } =
-        await buildOrUpdateLeaderboard(
-            context,
-            subredditName,
-            redisKey,
-            pointName,
-            pointSymbol,
-            leaderboardSize
-        );
+    const leaderboardSize = settings[AppSetting.LeaderboardSize] as number | undefined ?? 20;
 
-    markdown += `\n\n${tableMarkdown}`;
-    scores.push(...scores);
+    const highScores = await context.redis.zRange(POINTS_STORE_KEY, 0, leaderboardSize - 1, { by: "rank", reverse: true });
 
-    // --- Wiki update + logging ---
-    let wikiUpdated = false;
-    let permissionsUpdated = false;
+    const subredditName = await getSubredditName(context);
 
+    const pointName = settings[AppSetting.PointName] as string ?? "point";
+    let wikiContents = `# ${capitalize(pointName)}board for ${subredditName}\n\nUser | ${capitalize(pointName)}s Earned\n-|-\n`;
+    wikiContents += highScores.map(score => `${markdownEscape(score.member)}|${score.score}`).join("\n");
+
+    wikiContents += `\n\nThe leaderboard shows the top ${leaderboardSize} ${pluralize("user", leaderboardSize)} who ${pluralize("has", leaderboardSize)} been awarded at least one point`;
+
+    const installDateTimestamp = await context.redis.get("InstallDate");
+    if (installDateTimestamp) {
+        const installDate = new Date(parseInt(installDateTimestamp));
+        wikiContents += ` since ${installDate.toUTCString()}`;
+    }
+
+    wikiContents += ".";
+
+    const helpPage = settings[AppSetting.PointSystemHelpPage] as string | undefined;
+    if (helpPage) {
+        wikiContents += `\n\n[How to award points on /r/${subredditName}](${helpPage})`;
+    }
+
+    let wikiPage: WikiPage | undefined;
     try {
-        const wikiPage = await context.reddit.getWikiPage(
-            subredditName,
-            wikiPageName
-        );
+        wikiPage = await context.reddit.getWikiPage(subredditName, wikiPageName);
+    } catch {
+        //
+    }
 
-        const oldText = wikiPage.content;
-        const newText = markdown;
+    const wikiPageOptions = {
+        subredditName,
+        page: wikiPageName,
+        content: wikiContents,
+        reason: event.data?.reason as string | undefined,
+    };
 
-        if (oldText !== newText) {
-            await context.reddit.updateWikiPage({
-                subredditName,
-                page: wikiPageName,
-                content: newText,
-                reason: `Updated ${formattedDate}`,
-            });
-            wikiUpdated = true;
-
-            // Truncate texts for logging
-            const maxLen = 200;
-            const truncatedOld =
-                oldText.length > maxLen
-                    ? oldText.slice(0, maxLen) + "..."
-                    : oldText;
-            const truncatedNew =
-                newText.length > maxLen
-                    ? newText.slice(0, maxLen) + "..."
-                    : newText;
-
-            logger.info(
-                `✅ Wiki page content updated on r/${subredditName}/${wikiPageName}`,
-                {
-                    oldText: truncatedOld,
-                    newText: truncatedNew,
-                }
-            );
+    if (wikiPage) {
+        if (wikiPage.content !== wikiContents) {
+            await context.reddit.updateWikiPage(wikiPageOptions);
+            console.log("Leaderboard: Leaderboard updated.");
         }
+    } else {
+        wikiPage = await context.reddit.createWikiPage(wikiPageOptions);
+        console.log("Leaderboard: Leaderboard created.");
+    }
 
-        const wikiSettings = await wikiPage.getSettings();
-        if (wikiSettings.permLevel !== correctPermissionLevel) {
-            await context.reddit.updateWikiPageSettings({
-                subredditName,
-                page: wikiPageName,
-                listed: true,
-                permLevel: correctPermissionLevel,
-            });
-            permissionsUpdated = true;
-            logger.info(
-                `✅ Wiki page permission level updated to ${correctPermissionLevel} on r/${subredditName}/${wikiPageName}`
-            );
-        }
+    const correctPermissionLevel = leaderboardMode[0] as LeaderboardMode === LeaderboardMode.Public ? WikiPagePermissionLevel.SUBREDDIT_PERMISSIONS : WikiPagePermissionLevel.MODS_ONLY;
 
-        if (!wikiUpdated && !permissionsUpdated) {
-            logger.info(
-                `ℹ️ Wiki page on r/${subredditName}/${wikiPageName} is already up-to-date.`
-            );
-        }
-    } catch (e) {
-        // Wiki page does not exist, create it fresh
-        await context.reddit.createWikiPage({
-            subredditName,
-            page: wikiPageName,
-            content: markdown,
-            reason: `Initial setup`,
-        });
+    const wikiPageSettings = await wikiPage.getSettings();
+    if (wikiPageSettings.permLevel !== correctPermissionLevel) {
         await context.reddit.updateWikiPageSettings({
             subredditName,
             page: wikiPageName,
             listed: true,
             permLevel: correctPermissionLevel,
         });
-        wikiUpdated = true;
-        permissionsUpdated = true;
-        logger.info(
-            `✅ Wiki page created and permissions set on r/${subredditName}/${wikiPageName}`
-        );
     }
 }
 

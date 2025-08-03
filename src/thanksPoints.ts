@@ -7,8 +7,6 @@ import {
     TriggerContext,
     User,
 } from "@devvit/public-api";
-import { fetchLeaderboardEntries, updateLeaderboardWiki } from "./helpers/LeaderboardHelpers.js";
-import { LeaderboardEntry } from "./customPost/state.js";
 import { CommentSubmit, CommentUpdate } from "@devvit/protos";
 import { isModerator } from "./utility.js";
 import {
@@ -23,6 +21,7 @@ import { setCleanupForUsers } from "./cleanupTasks.js";
 import { isLinkId } from "@devvit/shared-types/tid.js";
 import { logger } from "./logger.js";
 import { manualSetPointsForm } from "./main.js";
+import { updateLeaderboard } from "./leaderboard.js";
 
 const POINTS_STORE_KEY = "thanksPointsStore";
 
@@ -307,10 +306,15 @@ export async function handleThanksEvent(
 
     if (awardeeIsBot) {
         logger.debug("❌ Bot cannot award itself points");
-        await context.reddit.submitComment({
+        const newComment = await context.reddit.submitComment({
             id: event.comment.id,
             text: botAwardMessage,
         });
+
+        await Promise.all([
+                newComment.distinguish(),
+                newComment.lock(),
+            ]);
         return;
     }
 
@@ -352,10 +356,14 @@ export async function handleThanksEvent(
                 }
             );
 
-            await context.reddit.submitComment({
+            const newComment = await context.reddit.submitComment({
                 id: event.comment.id,
                 text: disallowedMessage,
             });
+            await Promise.all([
+                newComment.distinguish(),
+                newComment.lock(),
+            ]);
         } else if (accessControl === "moderators-and-superusers") {
             const disallowedMessage = formatMessage(
                 `You must be a moderator or superuser to award {{name}}s.`,
@@ -364,10 +372,15 @@ export async function handleThanksEvent(
                 }
             );
 
-            await context.reddit.submitComment({
+            const newComment = await context.reddit.submitComment({
                 id: event.comment.id,
                 text: disallowedMessage,
             });
+
+            await Promise.all([
+                newComment.distinguish(),
+                newComment.lock(),
+            ]);
         } else if (accessControl === "moderators-superusers-and-op") {
             const disallowedMessage = formatMessage(
                 `You must be a moderator, superuser, or OP to award {{name}}s.`,
@@ -376,10 +389,15 @@ export async function handleThanksEvent(
                 }
             );
 
-            await context.reddit.submitComment({
+            const newComment = await context.reddit.submitComment({
                 id: event.comment.id,
                 text: disallowedMessage,
             });
+
+            await Promise.all([
+                newComment.distinguish(),
+                newComment.lock(),
+            ]);
         }
 
         logger.warn("❌ Author does not have permission");
@@ -415,10 +433,15 @@ export async function handleThanksEvent(
         ] as string[]) ?? [NotifyOnSelfAwardReplyOptions.NoReply])[0];
 
         if (notify === NotifyOnSelfAwardReplyOptions.ReplyAsComment) {
-            await context.reddit.submitComment({
+            const newComment = await context.reddit.submitComment({
                 id: event.comment.id,
                 text: selfMsg,
             });
+
+            await Promise.all([
+                newComment.distinguish(),
+                newComment.lock(),
+            ]);
         } else if (notify === NotifyOnSelfAwardReplyOptions.ReplyByPM) {
             await context.reddit.sendPrivateMessage({
                 to: awarder,
@@ -435,10 +458,7 @@ export async function handleThanksEvent(
     const alreadyKey = `thanks-${parentComment.id}-${awarder}`;
     const modAlreadyAwardedKey = `modthanks-${parentComment.id}`;
 
-    const [alreadyAwarded, modAlreadyAwarded] = await Promise.all([
-        context.redis.exists(alreadyKey),
-        context.redis.exists(modAlreadyAwardedKey),
-    ]);
+    const alreadyAwarded = await context.redis.exists(alreadyKey);
 
     if (alreadyAwarded) {
         const alreadyMsg = formatMessage(
@@ -460,41 +480,48 @@ export async function handleThanksEvent(
         } else if (
             notify === NotifyOnPointAlreadyAwardedReplyOptions.ReplyAsComment
         ) {
-            await context.reddit.submitComment({
+            const newComment = await context.reddit.submitComment({
                 id: event.comment.id,
                 text: alreadyMsg,
             });
+
+            await Promise.all([
+                newComment.distinguish(),
+                newComment.lock(),
+            ]);
         }
+    }
 
-        // Check if it's a mod/superuser trying a second mod-award
-        const isSuperuser = await getUserIsSuperuser(awarder, context);
-        if ((isSuperuser || isMod) && containsModCommand && modAlreadyAwarded) {
-            logger.warn("❌ Mod/Superuser attempted duplicate mod-award.");
+    const modAlreadyAwarded = await context.redis.exists(modAlreadyAwardedKey);
 
-            const modDuplicateMsg = formatMessage(
-                `This comment has already received a moderator-approved {{name}}.`,
-                { name: pointName }
-            );
+    // Check if it's a mod/superuser trying a second mod-award
+    const isSuperuser = await getUserIsSuperuser(awarder, context);
+    const notify = ((settings[
+        AppSetting.NotifyOnPointAlreadyAwarded
+    ] as string[]) ?? ["none"])[0];
+    if ((isSuperuser || isMod) && containsModCommand && modAlreadyAwarded) {
+        logger.warn("❌ Mod/Superuser attempted duplicate mod-award.");
 
-            if (notify === NotifyOnPointAlreadyAwardedReplyOptions.ReplyByPM) {
-                await context.reddit.sendPrivateMessage({
-                    to: awarder,
-                    subject: `Already awarded with mod approval`,
-                    text: modDuplicateMsg,
-                });
-            } else if (
-                notify ===
-                NotifyOnPointAlreadyAwardedReplyOptions.ReplyAsComment
-            ) {
-                await context.reddit.submitComment({
-                    id: event.comment.id,
-                    text: modDuplicateMsg,
-                });
-            }
+        const modDuplicateMsg = formatMessage(
+            `This comment has already received a moderator-approved {{name}}.`,
+            { name: pointName }
+        );
 
-            return;
+        if (notify === NotifyOnPointAlreadyAwardedReplyOptions.ReplyByPM) {
+            await context.reddit.sendPrivateMessage({
+                to: awarder,
+                subject: `Already awarded with mod approval`,
+                text: modDuplicateMsg,
+            });
+        } else if (
+            notify === NotifyOnPointAlreadyAwardedReplyOptions.ReplyAsComment
+        ) {
+            const newComment = await context.reddit.submitComment({
+                id: event.comment.id,
+                text: modDuplicateMsg,
+            });
+            await Promise.all([newComment.distinguish(), newComment.lock()]);
         }
-
         logger.info("❌ Award was already given. Skipping.");
         return;
     }
@@ -504,7 +531,6 @@ export async function handleThanksEvent(
     const newScore = await context.redis.zIncrBy(redisKey, recipient, 1);
 
     // Check for mod or user command awarding
-    const isSuperuser = await getUserIsSuperuser(awarder, context);
     if ((isSuperuser || isMod) && containsModCommand) {
         // Set modAlreadyAwarded key
         await context.redis.set(modAlreadyAwardedKey, "1");
@@ -535,10 +561,16 @@ export async function handleThanksEvent(
         } else if (
             notifyOnModAward === NotifyOnSuccessReplyOptions.ReplyAsComment
         ) {
-            await context.reddit.submitComment({
+            const newComment = await context.reddit.submitComment({
                 id: event.comment.id,
                 text: modAwardMsg,
             });
+
+            await Promise.all([
+                newComment.distinguish(),
+                newComment.lock(),
+            ]);
+            await context.redis.set(modAlreadyAwardedKey, "1");
         }
     } else if (!isSuperuser && !isMod && containsModCommand) {
         logger.info(
@@ -550,10 +582,15 @@ export async function handleThanksEvent(
             { command: modCommand }
         );
 
-        await context.reddit.submitComment({
+        const newComment = await context.reddit.submitComment({
             id: event.comment.id,
             text: modDenyMsg,
         });
+
+        await Promise.all([
+                newComment.distinguish(),
+                newComment.lock(),
+            ]);
 
         return;
     } else if (containsUserCommand) {
@@ -592,17 +629,22 @@ export async function handleThanksEvent(
         } else if (
             notifySuccess === NotifyOnSuccessReplyOptions.ReplyAsComment
         ) {
-            await context.reddit.submitComment({
+            const newComment = await context.reddit.submitComment({
                 id: event.comment.id,
                 text: successMessage,
             });
+
+            await Promise.all([
+                newComment.distinguish(),
+                newComment.lock(),
+            ]);
         }
+
+        await context.redis.set(alreadyKey, "1");
     }
 
     // 🧼 Final step: update flair
     await setUserScore(recipient, newScore, context, settings);
-
-    await updateLeaderboardWiki(context);
 }
 
 function capitalize(word: string): string {
