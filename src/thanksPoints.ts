@@ -282,14 +282,20 @@ export async function handleThanksEvent(
 
     const commentBody = event.comment.body?.toLowerCase() ?? "";
 
+    const containsCommand = allCommands.some((cmd) =>
+        commentBody.includes(cmd)
+    );
+
     const isSystemAuthor = ["AutoModerator", context.appName].includes(
         event.author.name
     );
-    if (
-        isSystemAuthor &&
-        allCommands.some((cmd) => commentBody.includes(cmd))
-    ) {
+    if (isSystemAuthor && containsCommand) {
         logger.debug("❌ System user attempted a command");
+        return;
+    }
+
+    if (!containsCommand) {
+        logger.debug("❌ Comment does not contain command");
         return;
     }
 
@@ -311,9 +317,7 @@ export async function handleThanksEvent(
             text: botAwardMessage,
         });
 
-        await Promise.all([
-                newComment.distinguish(),
-            ]);
+        await Promise.all([newComment.distinguish()]);
         return;
     }
 
@@ -359,9 +363,7 @@ export async function handleThanksEvent(
                 id: event.comment.id,
                 text: disallowedMessage,
             });
-            await Promise.all([
-                newComment.distinguish(),
-            ]);
+            await Promise.all([newComment.distinguish()]);
         } else if (accessControl === "moderators-and-superusers") {
             const disallowedMessage = formatMessage(
                 `You must be a moderator or superuser to award {{name}}s.`,
@@ -375,9 +377,7 @@ export async function handleThanksEvent(
                 text: disallowedMessage,
             });
 
-            await Promise.all([
-                newComment.distinguish(),
-            ]);
+            await Promise.all([newComment.distinguish()]);
         } else if (accessControl === "moderators-superusers-and-op") {
             const disallowedMessage = formatMessage(
                 `You must be a moderator, superuser, or OP to award {{name}}s.`,
@@ -391,9 +391,7 @@ export async function handleThanksEvent(
                 text: disallowedMessage,
             });
 
-            await Promise.all([
-                newComment.distinguish(),
-            ]);
+            await Promise.all([newComment.distinguish()]);
         }
 
         logger.warn("❌ Author does not have permission");
@@ -434,9 +432,7 @@ export async function handleThanksEvent(
                 text: selfMsg,
             });
 
-            await Promise.all([
-                newComment.distinguish(),
-            ]);
+            await Promise.all([newComment.distinguish()]);
         } else if (notify === NotifyOnSelfAwardReplyOptions.ReplyByPM) {
             await context.reddit.sendPrivateMessage({
                 to: awarder,
@@ -480,9 +476,7 @@ export async function handleThanksEvent(
                 text: alreadyMsg,
             });
 
-            await Promise.all([
-                newComment.distinguish(),
-            ]);
+            await Promise.all([newComment.distinguish()]);
         }
     }
 
@@ -560,9 +554,7 @@ export async function handleThanksEvent(
                 text: modAwardMsg,
             });
 
-            await Promise.all([
-                newComment.distinguish(),
-            ]);
+            await Promise.all([newComment.distinguish()]);
             await context.redis.set(modAlreadyAwardedKey, "1");
         }
     } else if (!isSuperuser && !isMod && containsModCommand) {
@@ -580,9 +572,7 @@ export async function handleThanksEvent(
             text: modDenyMsg,
         });
 
-        await Promise.all([
-                newComment.distinguish(),
-            ]);
+        await Promise.all([newComment.distinguish()]);
 
         return;
     } else if (containsUserCommand) {
@@ -626,9 +616,7 @@ export async function handleThanksEvent(
                 text: successMessage,
             });
 
-            await Promise.all([
-                newComment.distinguish(),
-            ]);
+            await Promise.all([newComment.distinguish()]);
         }
 
         await context.redis.set(alreadyKey, "1");
