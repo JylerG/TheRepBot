@@ -22,6 +22,8 @@ import { isLinkId } from "@devvit/shared-types/tid.js";
 import { logger } from "./logger.js";
 import { manualSetPointsForm } from "./main.js";
 import { updateLeaderboard } from "./leaderboard.js";
+import { LeaderboardState } from "./customPost/state.js";
+import pluralize from "pluralize";
 
 const POINTS_STORE_KEY = "thanksPointsStore";
 
@@ -118,15 +120,10 @@ async function setUserScore(
     context: TriggerContext,
     settings: SettingsValues
 ) {
-    // Store the user's new score
-    await context.redis.zAdd(POINTS_STORE_KEY, {
-        member: username,
-        score: newScore,
-    });
     // Queue user for cleanup checks in 24 hours, overwriting existing value.
     await setCleanupForUsers([username], context);
 
-    // Queue a leaderboard update.
+    // Queue a leaderboard update job (optional, keeps history/logging)
     await context.scheduler.runJob({
         name: "updateLeaderboard",
         runAt: new Date(),
@@ -161,7 +158,6 @@ async function setUserScore(
         );
 
         let cssClass = settings[AppSetting.CSSClass] as string | undefined;
-        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
         if (!cssClass) {
             cssClass = undefined;
         }
@@ -169,7 +165,6 @@ async function setUserScore(
         let flairTemplate = settings[AppSetting.FlairTemplate] as
             | string
             | undefined;
-        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
         if (!flairTemplate) {
             flairTemplate = undefined;
         }
@@ -192,6 +187,45 @@ async function setUserScore(
         console.log(
             `${username}: Flair not set (option disabled or flair in wrong state)`
         );
+    }
+
+    
+
+    // ----------------------
+    // IMMEDIATE LEADERBOARD UPDATE
+    // ----------------------
+    const POINTS_STORE_KEY = `thanksPointsStore`;
+
+    // Update Redis ZSET with the new score
+    await context.redis.zAdd(POINTS_STORE_KEY, {
+        member: username,
+        score: newScore,
+    });
+
+    const state = new LeaderboardState(context as Context);
+
+    // If you have a global LeaderboardState instance, update it immediately
+    if (state) {
+        const entries = [...state.leaderboard];
+        const idx = entries.findIndex(e => e.username === username);
+        if (idx !== -1) {
+            entries[idx].score = newScore;
+            entries[idx].pointName = pluralize(
+                (settings[AppSetting.PointName] as string) ?? "point",
+                newScore
+            );
+        } else {
+            entries.push({
+                username,
+                score: newScore,
+                rank: entries.length + 1,
+                pointName: pluralize(
+                    (settings[AppSetting.PointName] as string) ?? "point",
+                    newScore
+                ),
+            });
+        }
+        state.leaderboard = entries;
     }
 }
 
@@ -282,10 +316,17 @@ export async function handleThanksEvent(
 
     const commentBody = event.comment.body?.toLowerCase() ?? "";
 
-    const containsCommand = allCommands.some((cmd) =>
-        commentBody.includes(cmd)
-    );
+    // Find the first matching command
+    let command = "";
+    const containsCommand = allCommands.some((cmd) => {
+        if (commentBody.includes(cmd)) {
+            command = cmd; // store matched command
+            return true;
+        }
+        return false;
+    });
 
+    // System user check
     const isSystemAuthor = ["AutoModerator", context.appName].includes(
         event.author.name
     );
@@ -296,6 +337,20 @@ export async function handleThanksEvent(
 
     if (!containsCommand) {
         logger.debug("❌ Comment does not contain command");
+        return;
+    }
+
+    // Build regex for "command inside quote" and "command inside code"
+    const containsQuote = new RegExp(`> *${command}.*`, "i");
+    const containsAltText = new RegExp(`\`\s*${command}\s*\``, "i");
+    const containsSpoiler = new RegExp(`>!\s*${command}\s*!<`, 'i')
+
+    const commandContainsQuote = containsQuote.test(commentBody);
+    const commandContainsAltText = containsAltText.test(commentBody);
+    const commandContainsSpoiler = containsSpoiler.test(commentBody);
+
+    if (commandContainsQuote || commandContainsAltText || commandContainsSpoiler) {
+        logger.debug("❌ Command appears inside quote or code block");
         return;
     }
 

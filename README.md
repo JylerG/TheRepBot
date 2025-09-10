@@ -38,7 +38,13 @@ This app is open source and licenced under the BSD 3-Clause Licence. You can fin
 NOTE: If you update settings, you will have to uninstall to be able to reimplement the content that you want in whatever you are editing.
 
 ## Version History
-### 0.0.29
+### 5.0.0
+* Make it possible to create a leaderboard that can be refreshed by anyone at any time if the
+### 4.0.0
+* Make it so comments with trigger commands that are in spoiler text won't trigger
+### 3.0.0
+* Make it so comments with trigger commands that are in a quote or alt text block won't trigger
+### 2.0.0
 * Make it so non-trigger comments won't trigger the bot's responses
 ### 0.0.28
 * Make it so the bot doesn't lock its comments on responses

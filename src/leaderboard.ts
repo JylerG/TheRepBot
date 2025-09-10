@@ -8,7 +8,6 @@ import {
 import { format,  } from "date-fns";
 import { AppSetting, LeaderboardMode, TemplateDefaults } from "./settings.js";
 import { getSubredditName } from "./utility.js";
-import { logger } from "./logger.js";
 import pluralize from "pluralize";
 
 export const TIMEFRAMES = [
