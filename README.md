@@ -38,8 +38,11 @@ This app is open source and licenced under the BSD 3-Clause Licence. You can fin
 NOTE: If you update settings, you will have to uninstall to be able to reimplement the content that you want in whatever you are editing.
 
 ## Version History
+### 6.0.0
+* Lock the comment made by the bot on the leaderboard custom post
 ### 5.0.0
-* Make it possible to create a leaderboard that can be refreshed by anyone at any time if the
+* Make it possible to create a leaderboard post that can be refreshed by anyone at any time if a user presses the refresh button
+* Append a message to leaderboard custom post that informs the user how to refresh the data if it doesn't appear for them
 ### 4.0.0
 * Make it so comments with trigger commands that are in spoiler text won't trigger
 ### 3.0.0

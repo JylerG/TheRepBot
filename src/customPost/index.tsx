@@ -132,6 +132,7 @@ export async function createCustomPostFormHandler(
 
     // Sticky the bot comment
     await comment.distinguish(true);
+    await comment.lock();
 
     context.ui.showToast({
         text: "Leaderboard post has been created successfully",
