@@ -38,6 +38,15 @@ This app is open source and licenced under the BSD 3-Clause Licence. You can fin
 NOTE: If you update settings, you will have to uninstall to be able to reimplement the content that you want in whatever you are editing.
 
 ## Version History
+### 9.0.0
+* Make it so a user can only receive a point once per comment
+### 8.0.0
+* Make it so a user's score can be set to 0
+* Update code so that the leaderboard will be set and updated when a user receives a point or their score is manually updated
+### 7.0.1
+* Forgot to save README (oops!)
+### 7.0.0
+* Make it so the comment made by the bot on the custom post can be locked or unlocked by the person making the post in the post UI
 ### 6.0.0
 * Lock the comment made by the bot on the leaderboard custom post
 ### 5.0.0

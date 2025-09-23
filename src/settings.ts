@@ -21,6 +21,7 @@ export enum LeaderboardMode {
 }
 
 export enum AppSetting {
+    FlairTemplateText = "FlairTemplateText",
     NotifyOnSelfAward = "notifyOnSelfAward",
     NotifyUsersWhenAPointIsAwarded = "notifyUsersWhenAPointIsAwarded",
     UsersWhoCannotAwardPointsMessage = "usersWhoCannotAwardPointsMessage",
@@ -67,7 +68,6 @@ export enum AppSetting {
     AllowUnflairedPosts = "allowUnflairedPosts",
     UnflairedPostMessage = "unflairedPostMessage",
     OPOnlyDisallowedMessage = "opOnlyDisallowedMessage",
-    PointAlreadyAwardedMessage = "pointAlreadyAwardedMessage",
     NotifyOnPointAlreadyAwarded = "notifyOnPointAlreadyAwarded",
     NotifyOnDuplicateAward = "notifyOnDuplicateAward",
     NotifyOnBotAward = "notifyOnBotAward",
@@ -77,21 +77,18 @@ export enum AppSetting {
     NotifyOnOPOnlyDisallowed = "notifyOnOPOnlyDisallowed",
     NotifyOnDisallowedFlair = "notifyOnDisallowedFlair",
     NotifyOnUnflairedPost = "notifyOnUnflairedPost",
-    NotifyOnDuplicateAwardMessage = "notifyOnDuplicateAwardMessage",
 }
 
 export enum TemplateDefaults {
     UnflairedPostMessage = "Points cannot be awarded on posts without flair. Please award only on flaired posts.",
     OPOnlyDisallowedMessage = "Only moderators, approved users, and Post Authors (OPs) can award {{name}}s.",
     ApproveMessage = "A moderator gave an award! u/{{awardee}} now has {{total}}{{symbol}} {{name}}s.",
-    NotifyOnDuplicateAwardMessage = "You have already awarded this comment a {{name}}.",
-    NotifyOnPointAlreadyAwardedTemplate = "You have already awarded this comment a {{name}}.",
     LeaderboardHelpPageMessage = "[How to award points with RepBot.]({{help}})",
     DisallowedFlairMessage = "Points cannot be awarded on posts with this flair. Please choose another post.",
     UsersWhoCannotAwardPointsMessage = "You do not have permission to award {{name}}s.",
     ModOnlyDisallowedMessage = "Only moderators are allowed to award points.",
     ApprovedOnlyDisallowedMessage = "Only moderators and approved users can award points.",
-    DuplicateAwardMessage = "This user has already been awarded for this comment.",
+    DuplicateAwardMessage = "This comment has already been awarded a {{name}}.",
     SelfAwardMessage = "You can't award yourself a {{name}}.",
     BotAwardMessage = "You can't award u/TheRepBot a {{name}}.",
     InvalidPostMessage = "Points cannot be awarded on this post because the recipient is suspended or shadowbanned.",
@@ -570,7 +567,20 @@ export const appSettings: SettingsFormField[] = [
                 label: "Flair template ID to use for points flairs",
                 helpText:
                     "Optional. Please choose either a CSS class or flair template, not both",
-                onValidate: isFlairTemplateValid,
+            },
+            {
+                name: AppSetting.FlairTemplateText,
+                type: "string",
+                label: "Template for points flair text",
+                defaultValue: "{{points}}",
+                helpText: "The template for the flair text. Must include a placeholder {{points}}",
+                onValidate: ({ value }) => {
+                    const regex = /{{points}}/g;
+                    const matches = value?.match(regex);
+                    if (!matches || matches.length > 1) {
+                        return "You must provide a flair text template that includes exactly one placeholder {{points}}";
+                    }
+                },
             },
         ],
     },
@@ -618,12 +628,12 @@ export const appSettings: SettingsFormField[] = [
             },
             {
                 type: "paragraph",
-                name: AppSetting.PointAlreadyAwardedMessage,
+                name: AppSetting.DuplicateAwardMessage,
                 label: "Point Already Awarded Message",
                 helpText:
                     "Shown when a user tries to award a message they've already awarded. Placeholders Supported: {{name}}, {{awarder}}",
                 defaultValue:
-                    TemplateDefaults.NotifyOnPointAlreadyAwardedTemplate,
+                    TemplateDefaults.DuplicateAwardMessage,
             },
             {
                 type: "select",

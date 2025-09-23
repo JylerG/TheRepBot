@@ -70,6 +70,13 @@ export const customPostForm: Form = {
             type: "boolean",
             defaultValue: true,
         },
+        {
+            label: "Lock comment by bot?",
+            helpText: "The bot will post a comment explaining the post and how to refresh it if the post is empty. This option decides whether or not users can reply to that comment.",
+            name: "lockBotComment",
+            type: "boolean",
+            defaultValue: true,
+        },
     ],
 };
 
@@ -121,7 +128,7 @@ export async function createCustomPostFormHandler(
     const pointName = pluralize(settings[AppSetting.PointName] as string ?? "point");
     // --- NEW: Bot posts a message to the newly created leaderboard post ---
     const botMessage = formatMessage(
-        `This post displays the users with the most ${pointName} in this subreddit.\n\n`
+        `This post displays the top **${newData.numberOfUsers}** users with the most ${pointName} in this subreddit.\n\n`
         + `It is updated periodically, but you can also refresh it manually by clicking the refresh button at the top of the leaderboard.`,
         {}
     );
@@ -132,7 +139,10 @@ export async function createCustomPostFormHandler(
 
     // Sticky the bot comment
     await comment.distinguish(true);
-    await comment.lock();
+
+    if (event.values.lockBotComment) {
+        await comment.lock();
+    }
 
     context.ui.showToast({
         text: "Leaderboard post has been created successfully",

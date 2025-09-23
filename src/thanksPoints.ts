@@ -22,8 +22,6 @@ import { isLinkId } from "@devvit/shared-types/tid.js";
 import { logger } from "./logger.js";
 import { manualSetPointsForm } from "./main.js";
 import { updateLeaderboard } from "./leaderboard.js";
-import { LeaderboardState } from "./customPost/state.js";
-import pluralize from "pluralize";
 
 const POINTS_STORE_KEY = "thanksPointsStore";
 
@@ -120,10 +118,15 @@ async function setUserScore(
     context: TriggerContext,
     settings: SettingsValues
 ) {
+    // Store the user's new score
+    await context.redis.zAdd(POINTS_STORE_KEY, {
+        member: username,
+        score: newScore,
+    });
     // Queue user for cleanup checks in 24 hours, overwriting existing value.
     await setCleanupForUsers([username], context);
 
-    // Queue a leaderboard update job (optional, keeps history/logging)
+    // Queue a leaderboard update.
     await context.scheduler.runJob({
         name: "updateLeaderboard",
         runAt: new Date(),
@@ -158,6 +161,7 @@ async function setUserScore(
         );
 
         let cssClass = settings[AppSetting.CSSClass] as string | undefined;
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
         if (!cssClass) {
             cssClass = undefined;
         }
@@ -165,6 +169,7 @@ async function setUserScore(
         let flairTemplate = settings[AppSetting.FlairTemplate] as
             | string
             | undefined;
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
         if (!flairTemplate) {
             flairTemplate = undefined;
         }
@@ -187,45 +192,6 @@ async function setUserScore(
         console.log(
             `${username}: Flair not set (option disabled or flair in wrong state)`
         );
-    }
-
-    
-
-    // ----------------------
-    // IMMEDIATE LEADERBOARD UPDATE
-    // ----------------------
-    const POINTS_STORE_KEY = `thanksPointsStore`;
-
-    // Update Redis ZSET with the new score
-    await context.redis.zAdd(POINTS_STORE_KEY, {
-        member: username,
-        score: newScore,
-    });
-
-    const state = new LeaderboardState(context as Context);
-
-    // If you have a global LeaderboardState instance, update it immediately
-    if (state) {
-        const entries = [...state.leaderboard];
-        const idx = entries.findIndex(e => e.username === username);
-        if (idx !== -1) {
-            entries[idx].score = newScore;
-            entries[idx].pointName = pluralize(
-                (settings[AppSetting.PointName] as string) ?? "point",
-                newScore
-            );
-        } else {
-            entries.push({
-                username,
-                score: newScore,
-                rank: entries.length + 1,
-                pointName: pluralize(
-                    (settings[AppSetting.PointName] as string) ?? "point",
-                    newScore
-                ),
-            });
-        }
-        state.leaderboard = entries;
     }
 }
 
@@ -316,17 +282,10 @@ export async function handleThanksEvent(
 
     const commentBody = event.comment.body?.toLowerCase() ?? "";
 
-    // Find the first matching command
-    let command = "";
-    const containsCommand = allCommands.some((cmd) => {
-        if (commentBody.includes(cmd)) {
-            command = cmd; // store matched command
-            return true;
-        }
-        return false;
-    });
+    const containsCommand = allCommands.some((cmd) =>
+        commentBody.includes(cmd)
+    );
 
-    // System user check
     const isSystemAuthor = ["AutoModerator", context.appName].includes(
         event.author.name
     );
@@ -337,20 +296,6 @@ export async function handleThanksEvent(
 
     if (!containsCommand) {
         logger.debug("❌ Comment does not contain command");
-        return;
-    }
-
-    // Build regex for "command inside quote" and "command inside code"
-    const containsQuote = new RegExp(`> *${command}.*`, "i");
-    const containsAltText = new RegExp(`\`\s*${command}\s*\``, "i");
-    const containsSpoiler = new RegExp(`>!\s*${command}\s*!<`, 'i')
-
-    const commandContainsQuote = containsQuote.test(commentBody);
-    const commandContainsAltText = containsAltText.test(commentBody);
-    const commandContainsSpoiler = containsSpoiler.test(commentBody);
-
-    if (commandContainsQuote || commandContainsAltText || commandContainsSpoiler) {
-        logger.debug("❌ Command appears inside quote or code block");
         return;
     }
 
@@ -453,18 +398,6 @@ export async function handleThanksEvent(
         return;
     }
 
-    // Detect trigger
-    const usesRegex = settings[AppSetting.ThanksCommandUsesRegex];
-    const containsUserCommand = usesRegex
-        ? userCommands
-              .map((c) => new RegExp(c, "i"))
-              .some((r) => r.test(commentBody))
-        : userCommands.some((c) => commentBody.includes(c));
-
-    const containsModCommand = modCommand && commentBody.includes(modCommand);
-
-    if (!containsUserCommand && !containsModCommand) return;
-
     if (!recipient) {
         logger.warn("❌ No recipient found.");
         return;
@@ -501,15 +434,15 @@ export async function handleThanksEvent(
     }
 
     // Check if already awarded
-    const alreadyKey = `thanks-${parentComment.id}-${awarder}`;
+    const alreadyKey = `thanks-${parentComment.id}`;
     const modAlreadyAwardedKey = `modthanks-${parentComment.id}`;
 
     const alreadyAwarded = await context.redis.exists(alreadyKey);
 
     if (alreadyAwarded) {
         const alreadyMsg = formatMessage(
-            (settings[AppSetting.PointAlreadyAwardedMessage] as string) ??
-                TemplateDefaults.NotifyOnPointAlreadyAwardedTemplate,
+            (settings[AppSetting.DuplicateAwardMessage] as string) ??
+                TemplateDefaults.DuplicateAwardMessage,
             { name: pointName }
         );
 
@@ -542,6 +475,17 @@ export async function handleThanksEvent(
     const notify = ((settings[
         AppSetting.NotifyOnPointAlreadyAwarded
     ] as string[]) ?? ["none"])[0];
+
+    // Detect trigger
+    const usesRegex = settings[AppSetting.ThanksCommandUsesRegex];
+    const containsUserCommand = usesRegex
+        ? userCommands
+              .map((c) => new RegExp(c, "i"))
+              .some((r) => r.test(commentBody))
+        : userCommands.some((c) => commentBody.includes(c));
+
+    const containsModCommand = modCommand && commentBody.includes(modCommand);
+    
     if ((isSuperuser || isMod) && containsModCommand && modAlreadyAwarded) {
         logger.warn("❌ Mod/Superuser attempted duplicate mod-award.");
 
@@ -573,6 +517,8 @@ export async function handleThanksEvent(
     const redisKey = `${POINTS_STORE_KEY}`;
     const newScore = await context.redis.zIncrBy(redisKey, recipient, 1);
 
+
+    
     // Check for mod or user command awarding
     if ((isSuperuser || isMod) && containsModCommand) {
         // Set modAlreadyAwarded key
@@ -735,8 +681,8 @@ export async function manualSetPointsFormHandler(
     }
 
     const newScore = event.values.newScore as number | undefined;
-    if (!newScore) {
-        context.ui.showToast("You must enter a new score");
+    if (typeof newScore !== "number" || isNaN(newScore) || parseInt(newScore.toString(), 10) < 0) {
+        context.ui.showToast("You must enter a new score (0 or higher)");
         return;
     }
 
@@ -757,6 +703,5 @@ export async function manualSetPointsFormHandler(
     const settings = await context.settings.getAll();
 
     await setUserScore(comment.authorName, newScore, context, settings);
-
     context.ui.showToast(`Score for ${comment.authorName} is now ${newScore}`);
 }
